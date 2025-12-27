@@ -53,7 +53,8 @@ export default function UploadForm() {
         error instanceof Error ? error.message : "アップロードに失敗しました";
 
       // Check if SAS URL expired
-      if (errorMsg.includes("expired")) {
+      const isSasExpired = errorMsg.toLowerCase().includes("sas") && errorMsg.toLowerCase().includes("expired");
+      if (isSasExpired) {
         setErrorMessage(
           "アップロードURLの有効期限が切れました。もう一度アップロードしてください。"
         );

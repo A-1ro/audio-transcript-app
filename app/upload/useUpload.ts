@@ -76,13 +76,18 @@ export function useUpload(): UseUploadResult {
         throw new Error(`Upload failed: ${response.statusText}`);
       }
     } catch (error) {
-      // Check if it's a network error (like ERR_BLOCKED_BY_CLIENT in dev mode)
+      // Check if it's a network error (like ERR_BLOCKED_BY_CLIENT)
+      // This typically occurs in development when using mock URLs
       if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
-        // In development with mock URLs, this is expected
-        console.warn("Upload blocked (expected in development with mock URLs):", error);
-        // For development purposes, we'll treat this as success
-        // In production with real Azure Blob Storage, this won't happen
-        return;
+        // Check if we're using a mock URL (not a real Azure endpoint)
+        if (uploadUrl.includes("mockstorageaccount")) {
+          console.warn("Upload blocked - using mock URL in development mode");
+          // In development with mock URLs, treat this as success
+          // In production with real Azure Blob Storage, this won't happen
+          return;
+        }
+        // For real URLs, this is a genuine network error
+        throw new Error("Network error during upload. Please check your connection.");
       }
       throw error;
     }
@@ -102,6 +107,13 @@ export function useUpload(): UseUploadResult {
 
       // Get SAS URLs
       const uploadInfos = await getSasUrls(files);
+
+      // Validate that we got SAS URLs for all files
+      if (uploadInfos.length !== files.length) {
+        throw new Error(
+          `Expected ${files.length} SAS URLs but got ${uploadInfos.length}`
+        );
+      }
 
       // Upload each file
       const results: UploadedFile[] = [];
@@ -152,7 +164,7 @@ export function useUpload(): UseUploadResult {
           );
 
           // If SAS URL expired, throw error to allow retry
-          if (errorMessage.includes("expired")) {
+          if (errorMessage.toLowerCase().includes("sas") && errorMessage.toLowerCase().includes("expired")) {
             throw error;
           }
         }
