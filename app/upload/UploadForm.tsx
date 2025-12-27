@@ -19,6 +19,12 @@ interface ErrorModalState {
   details?: string;
 }
 
+interface UploadInfo {
+  fileName: string;
+  uploadUrl: string;
+  blobUrl: string;
+}
+
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<ValidationErrorType | null>(null);
@@ -102,7 +108,7 @@ export default function UploadForm() {
       const { uploads } = await sasResponse.json();
 
       // Step 2: Upload files to blob storage
-      const uploadPromises = uploads.map(async (upload: { fileName: string; uploadUrl: string; blobUrl: string }, index: number) => {
+      const uploadPromises = uploads.map(async (upload: UploadInfo, index: number) => {
         const file = selectedFiles[index];
         const response = await fetch(upload.uploadUrl, {
           method: "PUT",
@@ -114,7 +120,7 @@ export default function UploadForm() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
+          throw new Error(`Failed to upload ${file.name}: ${response.status} ${response.statusText}`);
         }
 
         return { fileName: file.name, blobUrl: upload.blobUrl };

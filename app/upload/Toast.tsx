@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+const DEFAULT_DURATION = 5000;
+
 interface ToastProps {
   message: string;
   type?: "error" | "success" | "info";
@@ -9,7 +11,7 @@ interface ToastProps {
   duration?: number;
 }
 
-export default function Toast({ message, type = "error", onClose, duration = 5000 }: ToastProps) {
+export default function Toast({ message, type = "error", onClose, duration = DEFAULT_DURATION }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
