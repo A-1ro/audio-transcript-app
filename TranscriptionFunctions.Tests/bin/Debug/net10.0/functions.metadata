@@ -1,0 +1,45 @@
+[
+  {
+    "name": "JobQueueTrigger",
+    "scriptFile": "TranscriptionFunctions.dll",
+    "entryPoint": "TranscriptionFunctions.JobQueueTrigger.RunAsync",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "queueMessage",
+        "direction": "In",
+        "type": "queueTrigger",
+        "dataType": "String",
+        "queueName": "transcription-jobs",
+        "connection": "AzureWebJobsStorage",
+        "properties": {}
+      },
+      {
+        "name": "client",
+        "direction": "In",
+        "type": "durableClient",
+        "properties": {}
+      }
+    ]
+  },
+  {
+    "name": "TranscriptionOrchestrator",
+    "scriptFile": "TranscriptionFunctions.dll",
+    "entryPoint": "TranscriptionFunctions.TranscriptionOrchestrator.RunOrchestrator",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "context",
+        "direction": "In",
+        "type": "orchestrationTrigger",
+        "properties": {}
+      }
+    ]
+  }
+]
