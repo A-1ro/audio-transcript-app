@@ -7,6 +7,7 @@ import ValidationError from "./ValidationError";
 import Toast from "./Toast";
 import ErrorModal from "./ErrorModal";
 import { validateFiles, ValidationError as ValidationErrorType } from "./validation";
+import { useUpload } from "./useUpload";
 
 interface ToastState {
   message: string;
@@ -19,18 +20,12 @@ interface ErrorModalState {
   details?: string;
 }
 
-interface UploadInfo {
-  fileName: string;
-  uploadUrl: string;
-  blobUrl: string;
-}
-
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<ValidationErrorType | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const { uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
 
   const handleFilesSelected = (newFiles: File[]) => {
     const updatedFiles = [...selectedFiles, ...newFiles];
@@ -58,132 +53,132 @@ export default function UploadForm() {
       return;
     }
 
-    setIsUploading(true);
     setValidationError(null);
 
     try {
-      // Step 1: Get SAS URLs
-      const sasResponse = await fetch("/api/uploads/sas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: selectedFiles.map(f => ({
-            name: f.name,
-            size: f.size,
-            type: f.type,
-          })),
-        }),
-      });
+      const results = await uploadFiles(selectedFiles);
 
-      if (!sasResponse.ok) {
-        // Check for SAS URL expiration or server errors
-        const errorData = await sasResponse.json().catch(() => ({}));
-        
-        if (sasResponse.status === 403 && errorData.code === "SAS_EXPIRED") {
-          // SAS URL expired - show modal with guidance
-          setErrorModal({
-            title: "SAS URL の有効期限切れ",
-            message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
-            details: errorData.message,
+      // Check if all uploads succeeded
+      const successCount = results.filter((r) => r.status === "success").length;
+      const errorCount = results.filter((r) => r.status === "error").length;
+
+      if (successCount > 0 && errorCount === 0) {
+        // All uploads successful - show toast and proceed to job creation
+        const blobUrls = results
+          .filter((f) => f.status === "success")
+          .map((f) => ({
+            fileName: f.file.name,
+            blobUrl: f.blobUrl,
+          }));
+
+        // Create job
+        try {
+          const jobResponse = await fetch("/api/jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audioFiles: blobUrls,
+            }),
           });
-        } else if (sasResponse.status >= 500) {
-          // Server error - show modal
-          setErrorModal({
-            title: "サーバーエラー",
-            message: "サーバーで問題が発生しました。しばらく待ってから再度お試しください。",
-            details: `ステータスコード: ${sasResponse.status}`,
+
+          if (!jobResponse.ok) {
+            const errorData = await jobResponse.json().catch(() => ({}));
+            
+            if (jobResponse.status >= 500) {
+              // Server error - show modal
+              setErrorModal({
+                title: "サーバーエラー",
+                message: "ジョブの作成中にサーバーで問題が発生しました。",
+                details: `ステータスコード: ${jobResponse.status}`,
+              });
+            } else {
+              setErrorModal({
+                title: "ジョブ作成エラー",
+                message: errorData.message || "ジョブの作成に失敗しました。",
+                details: `ステータスコード: ${jobResponse.status}`,
+              });
+            }
+            return;
+          }
+
+          const { jobId } = await jobResponse.json();
+
+          // Success - show toast
+          setToast({
+            message: `ジョブを作成しました (ID: ${jobId})`,
+            type: "success",
           });
-        } else {
-          // Other errors - show modal
-          setErrorModal({
-            title: "エラーが発生しました",
-            message: errorData.message || "SAS URL の取得に失敗しました。",
-            details: `ステータスコード: ${sasResponse.status}`,
+          
+          // Reset form
+          setSelectedFiles([]);
+          setValidationError(null);
+          resetUpload();
+        } catch (jobError) {
+          // Network error during job creation - show toast
+          console.error("Job creation error:", jobError);
+          setToast({
+            message: "ジョブ作成時に通信に失敗しました。ネットワーク接続を確認してください。",
+            type: "error",
           });
         }
-        setIsUploading(false);
-        return;
+      } else if (errorCount > 0) {
+        // Some uploads failed - show error details
+        const firstError = results.find((r) => r.status === "error");
+        if (firstError && firstError.error) {
+          // Check for specific error types
+          if (firstError.error.toLowerCase().includes("sas") && firstError.error.toLowerCase().includes("expired")) {
+            setErrorModal({
+              title: "SAS URL の有効期限切れ",
+              message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
+              details: firstError.error,
+            });
+          } else {
+            setErrorModal({
+              title: "アップロードエラー",
+              message: `${errorCount} ファイルのアップロードに失敗しました。`,
+              details: firstError.error,
+            });
+          }
+        }
       }
-
-      const { uploads } = await sasResponse.json();
-
-      // Step 2: Upload files to blob storage
-      const uploadPromises = uploads.map(async (upload: UploadInfo, index: number) => {
-        const file = selectedFiles[index];
-        const response = await fetch(upload.uploadUrl, {
-          method: "PUT",
-          headers: {
-            "x-ms-blob-type": "BlockBlob",
-            "Content-Type": file.type,
-          },
-          body: file,
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to upload ${file.name}: ${response.status} ${response.statusText}`);
-        }
-
-        return { fileName: file.name, blobUrl: upload.blobUrl };
-      });
-
-      const uploadedFiles = await Promise.all(uploadPromises);
-
-      // Step 3: Create job
-      const jobResponse = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audioFiles: uploadedFiles,
-        }),
-      });
-
-      if (!jobResponse.ok) {
-        const errorData = await jobResponse.json().catch(() => ({}));
-        
-        if (jobResponse.status >= 500) {
-          // Server error - show modal
-          setErrorModal({
-            title: "サーバーエラー",
-            message: "ジョブの作成中にサーバーで問題が発生しました。",
-            details: `ステータスコード: ${jobResponse.status}`,
-          });
-        } else {
-          setErrorModal({
-            title: "ジョブ作成エラー",
-            message: errorData.message || "ジョブの作成に失敗しました。",
-            details: `ステータスコード: ${jobResponse.status}`,
-          });
-        }
-        setIsUploading(false);
-        return;
-      }
-
-      const { jobId } = await jobResponse.json();
-
-      // Success
-      setToast({
-        message: `ジョブを作成しました (ID: ${jobId})`,
-        type: "success",
-      });
-      
-      // Reset form
-      setSelectedFiles([]);
-      setValidationError(null);
     } catch (error) {
-      // Network error - show toast
+      // Network error during SAS URL fetch - show toast
       console.error("Upload error:", error);
-      setToast({
-        message: "通信に失敗しました。ネットワーク接続を確認してください。",
-        type: "error",
-      });
-    } finally {
-      setIsUploading(false);
+      const errorMsg = error instanceof Error ? error.message : "アップロードに失敗しました";
+      
+      // Check if it's a server error (500+) or SAS URL expiration
+      if (errorMsg.toLowerCase().includes("sas") && errorMsg.toLowerCase().includes("expired")) {
+        setErrorModal({
+          title: "SAS URL の有効期限切れ",
+          message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
+          details: errorMsg,
+        });
+      } else if (errorMsg.toLowerCase().includes("failed to get sas")) {
+        setErrorModal({
+          title: "エラーが発生しました",
+          message: "SAS URL の取得に失敗しました。",
+          details: errorMsg,
+        });
+      } else {
+        setToast({
+          message: "通信に失敗しました。ネットワーク接続を確認してください。",
+          type: "error",
+        });
+      }
     }
   };
 
   const handleRetrySubmit = async () => {
     setErrorModal(null);
     await handleSubmit();
+  };
+
+  const handleReset = () => {
+    setSelectedFiles([]);
+    setValidationError(null);
+    setToast(null);
+    setErrorModal(null);
+    resetUpload();
   };
 
   return (
@@ -197,7 +192,7 @@ export default function UploadForm() {
       <FileList files={selectedFiles} onRemoveFile={handleRemoveFile} />
 
       {selectedFiles.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-8 space-y-4">
           <button
             onClick={handleSubmit}
             disabled={isUploading || validationError !== null}
@@ -209,6 +204,27 @@ export default function UploadForm() {
           >
             {isUploading ? "アップロード中..." : "アップロードしてジョブ作成"}
           </button>
+
+          {uploadedFiles.length > 0 && (
+            <button
+              onClick={handleReset}
+              disabled={isUploading}
+              className="w-full bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-700 font-semibold py-3 px-6 rounded-lg transition-colors"
+            >
+              リセット
+            </button>
+          )}
+        </div>
+      )}
+
+      {isUploading && (
+        <div className="mt-4">
+          <div className="flex items-center justify-center space-x-2">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <span className="text-sm text-gray-600">
+              ファイルをアップロード中...
+            </span>
+          </div>
         </div>
       )}
 
