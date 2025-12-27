@@ -43,7 +43,7 @@ export default function UploadForm() {
         <div className="mt-6 space-y-2">
           {validationErrors.map((error) => (
             <div
-              key={error.message}
+              key={error.type}
               className="p-4 bg-red-50 border border-red-200 rounded-lg"
             >
               <div className="flex items-start">

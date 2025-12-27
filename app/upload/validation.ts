@@ -1,7 +1,6 @@
 // Validation constants
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a'];
-const MAX_FILE_COUNT = 50;
-const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
+const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
 
 export interface ValidationError {
   type: 'format' | 'count' | 'size' | 'empty';
@@ -19,6 +18,24 @@ function hasAllowedExtension(file: File): boolean {
   const extension = fileName.substring(lastDotIndex);
   return ALLOWED_EXTENSIONS.includes(extension);
 }
+
+/**
+ * Validates if a file has an allowed MIME type
+ */
+function hasAllowedMimeType(file: File): boolean {
+  return ALLOWED_MIME_TYPES.some(type => file.type === type);
+}
+
+/**
+ * Validates if a file is allowed based on both extension and MIME type
+ */
+function isFileAllowed(file: File): boolean {
+  // Check both extension and MIME type for better security
+  return hasAllowedExtension(file) && (hasAllowedMimeType(file) || file.type === '');
+}
+
+const MAX_FILE_COUNT = 50;
+const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
 
 /**
  * Validates a list of files against all validation rules
@@ -45,7 +62,7 @@ export function validateFiles(files: File[]): ValidationError[] {
   }
 
   // Check file formats
-  const invalidFiles = files.filter(file => !hasAllowedExtension(file));
+  const invalidFiles = files.filter(file => !isFileAllowed(file));
   if (invalidFiles.length > 0) {
     const maxDisplayFiles = 5;
     const displayFileNames = invalidFiles.slice(0, maxDisplayFiles).map(f => f.name);
@@ -56,9 +73,10 @@ export function validateFiles(files: File[]): ValidationError[] {
       fileNames += ` ... 他${remainingCount}ファイル`;
     }
     
+    const supportedFormats = ALLOWED_EXTENSIONS.map(ext => ext.replace('.', '')).join(', ');
     errors.push({
       type: 'format',
-      message: `対応していないファイル形式が含まれています: ${fileNames}。対応形式: mp3, wav, m4a`
+      message: `対応していないファイル形式が含まれています: ${fileNames}。対応形式: ${supportedFormats}`
     });
   }
 
