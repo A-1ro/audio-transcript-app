@@ -1,0 +1,64 @@
+// Validation constants
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a'];
+const MAX_FILE_COUNT = 50;
+const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
+
+export interface ValidationError {
+  type: 'format' | 'count' | 'size' | 'empty';
+  message: string;
+}
+
+/**
+ * Validates if a file has an allowed extension
+ */
+function hasAllowedExtension(file: File): boolean {
+  const fileName = file.name.toLowerCase();
+  return ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
+}
+
+/**
+ * Validates a list of files against all validation rules
+ * Returns an array of validation errors (empty if valid)
+ */
+export function validateFiles(files: File[]): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Check if file list is empty
+  if (files.length === 0) {
+    errors.push({
+      type: 'empty',
+      message: 'ファイルを選択してください'
+    });
+    return errors;
+  }
+
+  // Check file count
+  if (files.length > MAX_FILE_COUNT) {
+    errors.push({
+      type: 'count',
+      message: `ファイル数が上限を超えています（最大: ${MAX_FILE_COUNT}ファイル、現在: ${files.length}ファイル）`
+    });
+  }
+
+  // Check file formats
+  const invalidFiles = files.filter(file => !hasAllowedExtension(file));
+  if (invalidFiles.length > 0) {
+    const fileNames = invalidFiles.map(f => f.name).join(', ');
+    errors.push({
+      type: 'format',
+      message: `対応していないファイル形式が含まれています: ${fileNames}。対応形式: mp3, wav, m4a`
+    });
+  }
+
+  // Check total size
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_TOTAL_SIZE) {
+    const totalSizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(2);
+    errors.push({
+      type: 'size',
+      message: `合計ファイルサイズが上限を超えています（最大: 1GB、現在: ${totalSizeGB}GB）`
+    });
+  }
+
+  return errors;
+}
