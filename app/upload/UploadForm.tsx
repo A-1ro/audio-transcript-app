@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
+import { validateFiles } from "./validation";
 import { useUpload } from "./useUpload";
 
 export default function UploadForm() {
@@ -10,6 +11,10 @@ export default function UploadForm() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
   const { uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
+
+  // Memoize validation to avoid re-running on every render
+  const validationErrors = useMemo(() => validateFiles(selectedFiles), [selectedFiles]);
+  const hasErrors = validationErrors.length > 0;
 
   const handleFilesSelected = (newFiles: File[]) => {
     setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
@@ -22,6 +27,11 @@ export default function UploadForm() {
   };
 
   const handleSubmit = async () => {
+    // Check validation errors first
+    if (hasErrors) {
+      return;
+    }
+
     if (selectedFiles.length === 0) {
       setErrorMessage("ファイルを選択してください");
       return;
@@ -74,6 +84,35 @@ export default function UploadForm() {
   return (
     <div className="max-w-4xl mx-auto">
       <FileDropZone onFilesSelected={handleFilesSelected} />
+      
+      {/* Display validation errors inline */}
+      {hasErrors && (
+        <div className="mt-6 space-y-2">
+          {validationErrors.map((error) => (
+            <div
+              key={error.type}
+              className="p-4 bg-red-50 border border-red-200 rounded-lg"
+            >
+              <div className="flex items-start">
+                <svg
+                  className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-sm text-red-800">{error.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -129,8 +168,12 @@ export default function UploadForm() {
         <div className="mt-8 space-y-4">
           <button
             onClick={handleSubmit}
-            disabled={isUploading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
+            disabled={hasErrors || isUploading}
+            className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
+              hasErrors || isUploading
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700 text-white"
+            }`}
           >
             {isUploading ? "アップロード中..." : "アップロードしてジョブ作成"}
           </button>
