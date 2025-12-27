@@ -11,4 +11,7 @@ builder.Services
     .AddApplicationInsightsTelemetryWorkerService()
     .ConfigureFunctionsApplicationInsights();
 
+// HttpClientの登録
+builder.Services.AddHttpClient();
+
 builder.Build().Run();

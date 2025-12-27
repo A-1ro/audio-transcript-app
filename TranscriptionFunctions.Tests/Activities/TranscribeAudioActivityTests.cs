@@ -12,12 +12,14 @@ namespace TranscriptionFunctions.Tests.Activities;
 public class TranscribeAudioActivityTests
 {
     private readonly Mock<ILogger<TranscribeAudioActivity>> _mockLogger;
+    private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
     private readonly TranscribeAudioActivity _activity;
 
     public TranscribeAudioActivityTests()
     {
         _mockLogger = new Mock<ILogger<TranscribeAudioActivity>>();
-        _activity = new TranscribeAudioActivity(_mockLogger.Object);
+        _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        _activity = new TranscribeAudioActivity(_mockLogger.Object, _mockHttpClientFactory.Object);
     }
 
     [Fact]
