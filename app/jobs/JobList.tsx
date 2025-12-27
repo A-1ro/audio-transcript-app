@@ -34,6 +34,10 @@ export default function JobList() {
 
   const formatDateTime = (isoString: string) => {
     const date = new Date(isoString);
+    // Validate date
+    if (isNaN(date.getTime())) {
+      return isoString; // Return original string if invalid
+    }
     return date.toLocaleString("ja-JP", {
       year: "numeric",
       month: "2-digit",
@@ -134,11 +138,7 @@ export default function JobList() {
                   {job.jobId}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span
-                    className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(
-                      job.status
-                    )}`}
-                  >
+                  <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(job.status)}`}>
                     {job.status}
                   </span>
                 </td>
