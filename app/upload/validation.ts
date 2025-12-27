@@ -1,6 +1,9 @@
 // Validation constants
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a'];
 const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+const MAX_FILE_COUNT = 50;
+const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
+const MAX_DISPLAY_FILES = 5; // Maximum number of invalid file names to display in error messages
 
 export interface ValidationError {
   type: 'format' | 'count' | 'size' | 'empty';
@@ -35,9 +38,6 @@ function isFileAllowed(file: File): boolean {
   return hasAllowedExtension(file) && (hasAllowedMimeType(file) || file.type === '');
 }
 
-const MAX_FILE_COUNT = 50;
-const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
-
 /**
  * Validates a list of files against all validation rules
  * Returns an array of validation errors (empty if valid)
@@ -65,9 +65,8 @@ export function validateFiles(files: File[]): ValidationError[] {
   // Check file formats
   const invalidFiles = files.filter(file => !isFileAllowed(file));
   if (invalidFiles.length > 0) {
-    const maxDisplayFiles = 5;
-    const displayFileNames = invalidFiles.slice(0, maxDisplayFiles).map(f => f.name);
-    const remainingCount = invalidFiles.length - maxDisplayFiles;
+    const displayFileNames = invalidFiles.slice(0, MAX_DISPLAY_FILES).map(f => f.name);
+    const remainingCount = invalidFiles.length - MAX_DISPLAY_FILES;
     
     let fileNames = displayFileNames.join(', ');
     if (remainingCount > 0) {

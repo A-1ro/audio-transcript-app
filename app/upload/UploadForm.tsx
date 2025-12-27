@@ -10,6 +10,7 @@ export default function UploadForm() {
 
   // Memoize validation to avoid re-running on every render
   const validationErrors = useMemo(() => validateFiles(selectedFiles), [selectedFiles]);
+  const hasErrors = validationErrors.length > 0;
 
   const handleFilesSelected = (newFiles: File[]) => {
     setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
@@ -21,7 +22,7 @@ export default function UploadForm() {
 
   const handleSubmit = () => {
     // Check if there are validation errors
-    if (validationErrors.length > 0) {
+    if (hasErrors) {
       return;
     }
 
@@ -35,7 +36,7 @@ export default function UploadForm() {
       <FileDropZone onFilesSelected={handleFilesSelected} />
       
       {/* Display validation errors inline */}
-      {validationErrors.length > 0 && (
+      {hasErrors && (
         <div className="mt-6 space-y-2">
           {validationErrors.map((error) => (
             <div
@@ -69,9 +70,9 @@ export default function UploadForm() {
         <div className="mt-8">
           <button
             onClick={handleSubmit}
-            disabled={validationErrors.length > 0}
+            disabled={hasErrors}
             className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
-              validationErrors.length > 0
+              hasErrors
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
