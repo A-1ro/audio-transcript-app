@@ -15,6 +15,9 @@ public class TranscribeAudioActivity
     private readonly ILogger<TranscribeAudioActivity> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
 
+    // デフォルトの信頼度スコア（Speech Serviceが詳細な信頼度を提供しない場合）
+    private const double DefaultConfidenceScore = 0.95;
+
     public TranscribeAudioActivity(
         ILogger<TranscribeAudioActivity> logger,
         IHttpClientFactory httpClientFactory)
@@ -75,7 +78,7 @@ public class TranscribeAudioActivity
                 {
                     FileId = input.FileId,
                     TranscriptText = $"Mock transcription for {input.FileId}",
-                    Confidence = 0.95,
+                    Confidence = DefaultConfidenceScore,
                     Status = TranscriptionStatus.Completed
                 };
             }
@@ -140,18 +143,40 @@ public class TranscribeAudioActivity
     private async Task<string> DownloadAudioFileAsync(string blobUrl, string fileId)
     {
         var httpClient = _httpClientFactory.CreateClient();
-        var tempPath = Path.Combine(Path.GetTempPath(), $"{fileId}_{Guid.NewGuid()}.audio");
+        
+        // URLから拡張子を取得、取得できない場合は.wavをデフォルトとする
+        var extension = Path.GetExtension(new Uri(blobUrl).LocalPath);
+        if (string.IsNullOrEmpty(extension))
+        {
+            extension = ".wav";
+        }
+        
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{fileId}_{Guid.NewGuid()}{extension}");
 
         _logger.LogDebug("Downloading audio file from {BlobUrl} to {TempPath}", blobUrl, tempPath);
 
-        var response = await httpClient.GetAsync(blobUrl);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            var response = await httpClient.GetAsync(blobUrl);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to download audio file from {blobUrl}. " +
+                    $"Status code: {response.StatusCode}, Reason: {response.ReasonPhrase}");
+            }
 
-        await using var fileStream = File.Create(tempPath);
-        await response.Content.CopyToAsync(fileStream);
+            await using var fileStream = File.Create(tempPath);
+            await response.Content.CopyToAsync(fileStream);
 
-        _logger.LogDebug("Downloaded audio file to {TempPath}", tempPath);
-        return tempPath;
+            _logger.LogDebug("Downloaded audio file to {TempPath}", tempPath);
+            return tempPath;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP request failed while downloading audio from {BlobUrl}", blobUrl);
+            throw new InvalidOperationException($"Failed to download audio file from {blobUrl}: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -201,8 +226,8 @@ public class TranscribeAudioActivity
     private double CalculateConfidence(SpeechRecognitionResult result)
     {
         // Azure Speech Serviceは単語ごとの信頼度を提供しますが、
-        // ここでは簡易的に全体の品質スコアとして0.95を返します
+        // ここでは簡易的に全体の品質スコアとしてDefaultConfidenceScoreを返します
         // 実際の実装では、result.Propertiesから詳細な信頼度情報を取得可能
-        return !string.IsNullOrWhiteSpace(result.Text) ? 0.95 : 0.0;
+        return !string.IsNullOrWhiteSpace(result.Text) ? DefaultConfidenceScore : 0.0;
     }
 }
