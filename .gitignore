@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
