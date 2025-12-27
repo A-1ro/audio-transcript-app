@@ -47,7 +47,15 @@ export function validateFiles(files: File[]): ValidationError[] {
   // Check file formats
   const invalidFiles = files.filter(file => !hasAllowedExtension(file));
   if (invalidFiles.length > 0) {
-    const fileNames = invalidFiles.map(f => f.name).join(', ');
+    const maxDisplayFiles = 5;
+    const displayFileNames = invalidFiles.slice(0, maxDisplayFiles).map(f => f.name);
+    const remainingCount = invalidFiles.length - maxDisplayFiles;
+    
+    let fileNames = displayFileNames.join(', ');
+    if (remainingCount > 0) {
+      fileNames += ` ... 他${remainingCount}ファイル`;
+    }
+    
     errors.push({
       type: 'format',
       message: `対応していないファイル形式が含まれています: ${fileNames}。対応形式: mp3, wav, m4a`
