@@ -18,8 +18,11 @@ function validateFileFormat(file: File): boolean {
   }
 
   // Fallback to extension check
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  return extension ? ALLOWED_EXTENSIONS.includes(extension) : false;
+  const lastDotIndex = file.name.lastIndexOf(".");
+  if (lastDotIndex === -1) return false;
+  
+  const extension = file.name.substring(lastDotIndex + 1).toLowerCase();
+  return ALLOWED_EXTENSIONS.includes(extension);
 }
 
 /**

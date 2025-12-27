@@ -181,9 +181,9 @@ export default function UploadForm() {
     }
   };
 
-  const handleRetrySubmit = () => {
+  const handleRetrySubmit = async () => {
     setErrorModal(null);
-    handleSubmit();
+    await handleSubmit();
   };
 
   return (
