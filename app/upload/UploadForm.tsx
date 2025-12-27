@@ -3,18 +3,28 @@
 import { useState, useMemo } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
+import { useUpload, type UploadState, isSasUrlExpired } from "./useUpload";
 import { validateFiles } from "./validation";
-import { useUpload } from "./useUpload";
+
+// 状態に応じたメッセージを取得
+function getStateMessage(state: UploadState): string {
+  switch (state) {
+    case "UploadingToBlob":
+      return "Blob Storageにアップロード中...";
+    case "JobCreated":
+      return "ジョブを作成中...";
+    case "Processing":
+      return "処理を開始しました！";
+    default:
+      return "";
+  }
+}
 
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
-  const { uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
-
-  // Memoize validation to avoid re-running on every render
-  const validationErrors = useMemo(() => validateFiles(selectedFiles), [selectedFiles]);
-  const hasErrors = validationErrors.length > 0;
+  const { state, uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
 
   const handleFilesSelected = (newFiles: File[]) => {
     setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
@@ -27,11 +37,6 @@ export default function UploadForm() {
   };
 
   const handleSubmit = async () => {
-    // Check validation errors first
-    if (hasErrors) {
-      return;
-    }
-
     if (selectedFiles.length === 0) {
       setErrorMessage("ファイルを選択してください");
       return;
@@ -62,9 +67,8 @@ export default function UploadForm() {
       const errorMsg =
         error instanceof Error ? error.message : "アップロードに失敗しました";
 
-      // Check if SAS URL expired
-      const isSasExpired = errorMsg.toLowerCase().includes("sas") && errorMsg.toLowerCase().includes("expired");
-      if (isSasExpired) {
+      // Check if SAS URL expired using the helper function
+      if (isSasUrlExpired(errorMsg)) {
         setErrorMessage(
           "アップロードURLの有効期限が切れました。もう一度アップロードしてください。"
         );
@@ -84,35 +88,6 @@ export default function UploadForm() {
   return (
     <div className="max-w-4xl mx-auto">
       <FileDropZone onFilesSelected={handleFilesSelected} />
-      
-      {/* Display validation errors inline */}
-      {hasErrors && (
-        <div className="mt-6 space-y-2">
-          {validationErrors.map((error) => (
-            <div
-              key={error.type}
-              className="p-4 bg-red-50 border border-red-200 rounded-lg"
-            >
-              <div className="flex items-start">
-                <svg
-                  className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <p className="text-sm text-red-800">{error.message}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {errorMessage && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -162,20 +137,50 @@ export default function UploadForm() {
         </div>
       )}
 
-      <FileList files={selectedFiles} onRemoveFile={handleRemoveFile} />
+      <FileList files={selectedFiles} onRemoveFile={isUploading ? undefined : handleRemoveFile} />
 
+      {/* 状態メッセージ */}
+      {isUploading && (
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center space-x-3">
+            <svg
+              className="animate-spin h-5 w-5 text-blue-600"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <p className="text-blue-800 font-medium">{getStateMessage(state)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* 送信ボタン */}
       {selectedFiles.length > 0 && (
         <div className="mt-8 space-y-4">
           <button
             onClick={handleSubmit}
-            disabled={hasErrors || isUploading}
+            disabled={isUploading}
             className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
-              hasErrors || isUploading
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              isUploading
+                ? "bg-gray-400 cursor-not-allowed text-gray-200"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
           >
-            {isUploading ? "アップロード中..." : "アップロードしてジョブ作成"}
+            {isUploading ? "処理中..." : "アップロードしてジョブ作成"}
           </button>
 
           {uploadedFiles.length > 0 && (
@@ -187,17 +192,6 @@ export default function UploadForm() {
               リセット
             </button>
           )}
-        </div>
-      )}
-
-      {isUploading && (
-        <div className="mt-4">
-          <div className="flex items-center justify-center space-x-2">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <span className="text-sm text-gray-600">
-              ファイルをアップロード中...
-            </span>
-          </div>
         </div>
       )}
     </div>
