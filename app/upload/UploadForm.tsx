@@ -6,8 +6,8 @@ import FileList from "./FileList";
 import ValidationError from "./ValidationError";
 import Toast from "./Toast";
 import ErrorModal from "./ErrorModal";
-import { validateFiles, ValidationError as ValidationErrorType } from "./validation";
-import { useUpload } from "./useUpload";
+import { validateFiles, type ValidationError as ValidationErrorType } from "./validation";
+import { useUpload, type UploadState, isSasUrlExpired } from "./useUpload";
 
 interface ToastState {
   message: string;
@@ -20,20 +20,34 @@ interface ErrorModalState {
   details?: string;
 }
 
+// 状態に応じたメッセージを取得
+function getStateMessage(state: UploadState): string {
+  switch (state) {
+    case "UploadingToBlob":
+      return "Blob Storageにアップロード中...";
+    case "JobCreated":
+      return "ジョブを作成中...";
+    case "Processing":
+      return "処理を開始しました！";
+    default:
+      return "";
+  }
+}
+
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [validationError, setValidationError] = useState<ValidationErrorType | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrorType[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
-  const { uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
+  const { state, uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
 
   const handleFilesSelected = (newFiles: File[]) => {
     const updatedFiles = [...selectedFiles, ...newFiles];
     setSelectedFiles(updatedFiles);
     
     // Validate files immediately after selection
-    const error = validateFiles(updatedFiles);
-    setValidationError(error);
+    const errors = validateFiles(updatedFiles);
+    setValidationErrors(errors);
   };
 
   const handleRemoveFile = (index: number) => {
@@ -41,19 +55,19 @@ export default function UploadForm() {
     setSelectedFiles(updatedFiles);
     
     // Revalidate after removal
-    const error = validateFiles(updatedFiles);
-    setValidationError(error);
+    const errors = validateFiles(updatedFiles);
+    setValidationErrors(errors);
   };
 
   const handleSubmit = async () => {
     // Validate before submission
-    const error = validateFiles(selectedFiles);
-    if (error) {
-      setValidationError(error);
+    const errors = validateFiles(selectedFiles);
+    if (errors.length > 0) {
+      setValidationErrors(errors);
       return;
     }
 
-    setValidationError(null);
+    setValidationErrors([]);
 
     try {
       const results = await uploadFiles(selectedFiles);
@@ -111,7 +125,7 @@ export default function UploadForm() {
           
           // Reset form
           setSelectedFiles([]);
-          setValidationError(null);
+          setValidationErrors([]);
           resetUpload();
         } catch (jobError) {
           // Network error during job creation - show toast
@@ -126,7 +140,7 @@ export default function UploadForm() {
         const firstError = results.find((r) => r.status === "error");
         if (firstError && firstError.error) {
           // Check for specific error types
-          if (firstError.error.toLowerCase().includes("sas") && firstError.error.toLowerCase().includes("expired")) {
+          if (isSasUrlExpired(firstError.error)) {
             setErrorModal({
               title: "SAS URL の有効期限切れ",
               message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
@@ -142,12 +156,12 @@ export default function UploadForm() {
         }
       }
     } catch (error) {
-      // Network error during SAS URL fetch - show toast
+      // Network error during SAS URL fetch or upload - handle appropriately
       console.error("Upload error:", error);
       const errorMsg = error instanceof Error ? error.message : "アップロードに失敗しました";
       
-      // Check if it's a server error (500+) or SAS URL expiration
-      if (errorMsg.toLowerCase().includes("sas") && errorMsg.toLowerCase().includes("expired")) {
+      // Check if it's a SAS URL expiration
+      if (isSasUrlExpired(errorMsg)) {
         setErrorModal({
           title: "SAS URL の有効期限切れ",
           message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
@@ -160,6 +174,7 @@ export default function UploadForm() {
           details: errorMsg,
         });
       } else {
+        // Network error - show toast
         setToast({
           message: "通信に失敗しました。ネットワーク接続を確認してください。",
           type: "error",
@@ -175,7 +190,7 @@ export default function UploadForm() {
 
   const handleReset = () => {
     setSelectedFiles([]);
-    setValidationError(null);
+    setValidationErrors([]);
     setToast(null);
     setErrorModal(null);
     resetUpload();
@@ -185,24 +200,59 @@ export default function UploadForm() {
     <div className="max-w-4xl mx-auto">
       <FileDropZone onFilesSelected={handleFilesSelected} />
       
-      {validationError && (
-        <ValidationError message={validationError.message} />
+      {/* Display all validation errors */}
+      {validationErrors.length > 0 && (
+        <div className="space-y-2 mt-4">
+          {validationErrors.map((error, index) => (
+            <ValidationError key={`${error.type}-${index}`} message={error.message} />
+          ))}
+        </div>
       )}
       
-      <FileList files={selectedFiles} onRemoveFile={handleRemoveFile} />
+      <FileList files={selectedFiles} onRemoveFile={isUploading ? undefined : handleRemoveFile} />
 
+      {/* 状態メッセージ */}
+      {isUploading && (
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center space-x-3">
+            <svg
+              className="animate-spin h-5 w-5 text-blue-600"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <p className="text-blue-800 font-medium">{getStateMessage(state)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* 送信ボタン */}
       {selectedFiles.length > 0 && (
         <div className="mt-8 space-y-4">
           <button
             onClick={handleSubmit}
-            disabled={isUploading || validationError !== null}
+            disabled={isUploading || validationErrors.length > 0}
             className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
-              isUploading || validationError
+              isUploading || validationErrors.length > 0
                 ? "bg-gray-400 cursor-not-allowed text-gray-200"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
           >
-            {isUploading ? "アップロード中..." : "アップロードしてジョブ作成"}
+            {isUploading ? "処理中..." : "アップロードしてジョブ作成"}
           </button>
 
           {uploadedFiles.length > 0 && (
@@ -214,17 +264,6 @@ export default function UploadForm() {
               リセット
             </button>
           )}
-        </div>
-      )}
-
-      {isUploading && (
-        <div className="mt-4">
-          <div className="flex items-center justify-center space-x-2">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <span className="text-sm text-gray-600">
-              ファイルをアップロード中...
-            </span>
-          </div>
         </div>
       )}
 

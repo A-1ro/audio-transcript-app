@@ -1,70 +1,96 @@
+// Validation constants
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a'];
+const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+const MAX_FILE_COUNT = 50;
+const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
+const MAX_DISPLAY_FILES = 5; // Maximum number of invalid file names to display in error messages
+
 export interface ValidationError {
-  type: "format" | "count" | "size" | "empty";
+  type: 'format' | 'count' | 'size' | 'empty';
   message: string;
 }
 
-const MAX_FILES = 50;
-const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
-const ALLOWED_EXTENSIONS = ["mp3", "wav", "m4a"];
-const ALLOWED_MIME_TYPES = ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/x-m4a"];
-
 /**
- * Validate file format
+ * Validates if a file has an allowed extension
  */
-function validateFileFormat(file: File): boolean {
-  // Check MIME type
-  if (file.type && ALLOWED_MIME_TYPES.includes(file.type)) {
-    return true;
-  }
-
-  // Fallback to extension check
-  const lastDotIndex = file.name.lastIndexOf(".");
+function hasAllowedExtension(file: File): boolean {
+  const fileName = file.name.toLowerCase();
+  const lastDotIndex = fileName.lastIndexOf('.');
   if (lastDotIndex === -1) return false;
   
-  const extension = file.name.substring(lastDotIndex + 1).toLowerCase();
+  const extension = fileName.substring(lastDotIndex);
   return ALLOWED_EXTENSIONS.includes(extension);
 }
 
 /**
- * Validate selected files according to requirements
+ * Validates if a file has an allowed MIME type
  */
-export function validateFiles(files: File[]): ValidationError | null {
-  // Check if files are empty
+function hasAllowedMimeType(file: File): boolean {
+  return ALLOWED_MIME_TYPES.includes(file.type);
+}
+
+/**
+ * Validates if a file is allowed based on both extension and MIME type
+ */
+function isFileAllowed(file: File): boolean {
+  // Check both extension and MIME type for better security
+  // Allow empty MIME type to handle browser inconsistencies
+  return hasAllowedExtension(file) && (hasAllowedMimeType(file) || file.type === '');
+}
+
+/**
+ * Validates a list of files against all validation rules
+ * Returns an array of validation errors (empty if valid)
+ */
+export function validateFiles(files: File[]): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Check if file list is empty
   if (files.length === 0) {
-    return {
-      type: "empty",
-      message: "ファイルを選択してください",
-    };
+    errors.push({
+      type: 'empty',
+      message: 'ファイルを選択してください'
+    });
+    return errors;
   }
 
   // Check file count
-  if (files.length > MAX_FILES) {
-    return {
-      type: "count",
-      message: `ファイル数が制限を超えています（最大: ${MAX_FILES}ファイル、選択中: ${files.length}ファイル）`,
-    };
+  if (files.length > MAX_FILE_COUNT) {
+    errors.push({
+      type: 'count',
+      message: `ファイル数が上限を超えています（最大: ${MAX_FILE_COUNT}ファイル、現在: ${files.length}ファイル）`
+    });
   }
 
   // Check file formats
-  const invalidFiles = files.filter(file => !validateFileFormat(file));
+  const invalidFiles = files.filter(file => !isFileAllowed(file));
   if (invalidFiles.length > 0) {
-    return {
-      type: "format",
-      message: `対応していない形式のファイルが含まれています: ${invalidFiles.map(f => f.name).join(", ")}。対応形式: mp3 / wav / m4a`,
-    };
+    const displayFileNames = invalidFiles.slice(0, MAX_DISPLAY_FILES).map(f => f.name);
+    const remainingCount = invalidFiles.length - MAX_DISPLAY_FILES;
+    
+    let fileNames = displayFileNames.join(', ');
+    if (remainingCount > 0) {
+      fileNames += ` ... 他${remainingCount}ファイル`;
+    }
+    
+    const supportedFormats = ALLOWED_EXTENSIONS.map(ext => ext.replace('.', '')).join(', ');
+    errors.push({
+      type: 'format',
+      message: `対応していないファイル形式が含まれています: ${fileNames}。対応形式: ${supportedFormats}`
+    });
   }
 
   // Check total size
   const totalSize = files.reduce((sum, file) => sum + file.size, 0);
   if (totalSize > MAX_TOTAL_SIZE) {
     const totalSizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(2);
-    return {
-      type: "size",
-      message: `ファイルの合計サイズが制限を超えています（最大: 1GB、現在: ${totalSizeGB}GB）`,
-    };
+    errors.push({
+      type: 'size',
+      message: `合計ファイルサイズが上限を超えています（最大: 1GB、現在: ${totalSizeGB}GB）`
+    });
   }
 
-  return null;
+  return errors;
 }
 
 /**
