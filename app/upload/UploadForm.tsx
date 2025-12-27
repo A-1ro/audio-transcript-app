@@ -1,19 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
 import { validateFiles, ValidationError } from "./validation";
 
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
 
-  // Validate files whenever they change
-  useEffect(() => {
-    const errors = validateFiles(selectedFiles);
-    setValidationErrors(errors);
-  }, [selectedFiles]);
+  // Memoize validation to avoid re-running on every render
+  const validationErrors = useMemo(() => validateFiles(selectedFiles), [selectedFiles]);
 
   const handleFilesSelected = (newFiles: File[]) => {
     setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);

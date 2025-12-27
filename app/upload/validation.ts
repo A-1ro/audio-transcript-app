@@ -23,7 +23,7 @@ function hasAllowedExtension(file: File): boolean {
  * Validates if a file has an allowed MIME type
  */
 function hasAllowedMimeType(file: File): boolean {
-  return ALLOWED_MIME_TYPES.some(type => file.type === type);
+  return ALLOWED_MIME_TYPES.includes(file.type);
 }
 
 /**
@@ -31,6 +31,7 @@ function hasAllowedMimeType(file: File): boolean {
  */
 function isFileAllowed(file: File): boolean {
   // Check both extension and MIME type for better security
+  // Allow empty MIME type to handle browser inconsistencies
   return hasAllowedExtension(file) && (hasAllowedMimeType(file) || file.type === '');
 }
 
