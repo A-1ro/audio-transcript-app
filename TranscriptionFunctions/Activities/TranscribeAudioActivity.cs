@@ -1,14 +1,16 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
 using Microsoft.Extensions.Logging;
-using Microsoft.CognitiveServices.Speech;
-using Microsoft.CognitiveServices.Speech.Audio;
 using TranscriptionFunctions.Models;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TranscriptionFunctions.Activities;
 
 /// <summary>
 /// 音声文字起こしActivity
+/// Azure Speech Service Batch Transcription APIを使用
 /// </summary>
 public class TranscribeAudioActivity
 {
@@ -95,59 +97,34 @@ public class TranscribeAudioActivity
 
             if (string.IsNullOrWhiteSpace(speechKey) || string.IsNullOrWhiteSpace(speechRegion))
             {
-                _logger.LogWarning(
-                    "Azure Speech Service credentials not configured. Using mock transcription for JobId: {JobId}, FileId: {FileId}",
-                    input.JobId,
-                    input.FileId);
-                
-                // 設定が無い場合はモックデータを返す（開発環境用）
-                await Task.Delay(500);
-                return new TranscriptionResult
-                {
-                    FileId = input.FileId,
-                    TranscriptText = $"Mock transcription for {input.FileId}",
-                    Confidence = DefaultConfidenceScore,
-                    Status = TranscriptionStatus.Completed
-                };
+                var errorMessage = "Azure Speech Service credentials not configured. " +
+                    $"Set AzureSpeechServiceKey and AzureSpeechServiceRegion environment variables for JobId: {input.JobId}, FileId: {input.FileId}";
+                _logger.LogError(errorMessage);
+                throw new InvalidOperationException(errorMessage);
             }
 
-            // 音声ファイルをダウンロード
-            string tempAudioPath = await DownloadAudioFileAsync(input.BlobUrl, input.FileId);
+            // Azure Speech Service Batch Transcription APIで文字起こし
+            var (transcriptText, confidence) = await TranscribeWithBatchApiAsync(
+                speechKey,
+                speechRegion,
+                recognitionLanguage,
+                input.BlobUrl,
+                input.JobId,
+                input.FileId);
 
-            try
+            _logger.LogInformation(
+                "Transcription completed for JobId: {JobId}, FileId: {FileId}, Confidence: {Confidence}",
+                input.JobId,
+                input.FileId,
+                confidence);
+
+            return new TranscriptionResult
             {
-                // Azure Speech Serviceで文字起こし
-                var (transcriptText, confidence) = await TranscribeWithSpeechServiceAsync(
-                    speechKey,
-                    speechRegion,
-                    recognitionLanguage,
-                    tempAudioPath,
-                    input.JobId,
-                    input.FileId);
-
-                _logger.LogInformation(
-                    "Transcription completed for JobId: {JobId}, FileId: {FileId}, Confidence: {Confidence}",
-                    input.JobId,
-                    input.FileId,
-                    confidence);
-
-                return new TranscriptionResult
-                {
-                    FileId = input.FileId,
-                    TranscriptText = transcriptText,
-                    Confidence = confidence,
-                    Status = TranscriptionStatus.Completed
-                };
-            }
-            finally
-            {
-                // 一時ファイルを削除
-                if (File.Exists(tempAudioPath))
-                {
-                    File.Delete(tempAudioPath);
-                    _logger.LogDebug("Deleted temporary audio file: {TempPath}", tempAudioPath);
-                }
-            }
+                FileId = input.FileId,
+                TranscriptText = transcriptText,
+                Confidence = confidence,
+                Status = TranscriptionStatus.Completed
+            };
         }
         catch (Exception ex)
         {
@@ -169,139 +146,241 @@ public class TranscribeAudioActivity
     }
 
     /// <summary>
-    /// Blobストレージからオーディオファイルをダウンロードする
+    /// Azure Speech Service Batch Transcription APIを使用して音声を文字起こしする
     /// </summary>
-    private async Task<string> DownloadAudioFileAsync(string blobUrl, string fileId)
-    {
-        using var httpClient = _httpClientFactory.CreateClient();
-        
-        // URLから拡張子を取得、取得できない場合は.wavをデフォルトとする
-        var extension = Path.GetExtension(new Uri(blobUrl).LocalPath);
-        if (string.IsNullOrEmpty(extension))
-        {
-            extension = ".wav";
-        }
-        
-        // 現在はWAVファイルのみサポート（Speech SDKの制限）
-        var supportedExtensions = new[] { ".wav" };
-        if (!supportedExtensions.Contains(extension.ToLowerInvariant()))
-        {
-            throw new NotSupportedException(
-                $"Audio file format '{extension}' is not supported. Only WAV files are currently supported.");
-        }
-        
-        // FileIdをサニタイズしてパストラバーサル攻撃を防ぐ
-        var sanitizedFileId = Path.GetFileName(fileId);
-        if (string.IsNullOrWhiteSpace(sanitizedFileId))
-        {
-            sanitizedFileId = "audio";
-        }
-        
-        var tempPath = Path.Combine(Path.GetTempPath(), $"{sanitizedFileId}_{Guid.NewGuid()}{extension}");
-
-        _logger.LogDebug("Downloading audio file from {BlobUrl} to {TempPath}", blobUrl, tempPath);
-
-        try
-        {
-            using var response = await httpClient.GetAsync(blobUrl);
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to download audio file from {blobUrl}. " +
-                    $"Status code: {response.StatusCode}, Reason: {response.ReasonPhrase}");
-            }
-
-            try
-            {
-                await using var fileStream = File.Create(tempPath);
-                await response.Content.CopyToAsync(fileStream);
-
-                _logger.LogDebug("Downloaded audio file to {TempPath}", tempPath);
-                return tempPath;
-            }
-            catch
-            {
-                // ダウンロード失敗時に部分的なファイルを削除
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-                throw;
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "HTTP request failed while downloading audio from {BlobUrl}", blobUrl);
-            throw new InvalidOperationException($"Failed to download audio file from {blobUrl}: {ex.Message}", ex);
-        }
-    }
-
-    /// <summary>
-    /// Azure Speech Service のリアルタイム認識機能を使用して音声を文字起こしする。
-    /// 注意: このメソッドは Azure AI Speech の Batch Transcription API は使用しておらず、
-    /// RecognizeOnceAsync による短い音声（通常 15 秒未満）向けの単発認識のみを行います。
-    /// 長い音声ファイルの場合、最初の部分のみが文字起こしされる点に注意してください。
-    /// </summary>
-    private async Task<(string transcriptText, double confidence)> TranscribeWithSpeechServiceAsync(
+    private async Task<(string transcriptText, double confidence)> TranscribeWithBatchApiAsync(
         string speechKey,
         string speechRegion,
         string recognitionLanguage,
-        string audioFilePath,
+        string blobUrl,
         string jobId,
         string fileId)
     {
-        var speechConfig = SpeechConfig.FromSubscription(speechKey, speechRegion);
-        speechConfig.SpeechRecognitionLanguage = recognitionLanguage;
+        using var httpClient = _httpClientFactory.CreateClient();
+        httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", speechKey);
 
-        using var audioConfig = AudioConfig.FromWavFileInput(audioFilePath);
-        using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+        var baseUrl = $"https://{speechRegion}.api.cognitive.microsoft.com/speechtotext/v3.1";
 
-        var result = await recognizer.RecognizeOnceAsync();
+        try
+        {
+            // 1. バッチ文字起こしジョブを作成
+            var transcriptionId = await CreateBatchTranscriptionAsync(
+                httpClient, baseUrl, blobUrl, recognitionLanguage, jobId, fileId);
 
-        if (result.Reason == ResultReason.RecognizedSpeech)
-        {
-            return (result.Text, CalculateConfidence(result));
+            _logger.LogInformation(
+                "Created batch transcription {TranscriptionId} for JobId: {JobId}, FileId: {FileId}",
+                transcriptionId, jobId, fileId);
+
+            // 2. 文字起こし完了を待機
+            var transcriptionStatus = await WaitForTranscriptionCompletionAsync(
+                httpClient, baseUrl, transcriptionId, jobId, fileId);
+
+            if (transcriptionStatus != "Succeeded")
+            {
+                throw new InvalidOperationException(
+                    $"Batch transcription failed with status: {transcriptionStatus} for JobId={jobId}, FileId={fileId}");
+            }
+
+            // 3. 結果を取得
+            var (text, confidence) = await GetTranscriptionResultAsync(
+                httpClient, baseUrl, transcriptionId, jobId, fileId);
+
+            // 4. クリーンアップ（バッチジョブを削除）
+            await DeleteBatchTranscriptionAsync(httpClient, baseUrl, transcriptionId);
+
+            return (text, confidence);
         }
-        else if (result.Reason == ResultReason.NoMatch)
+        catch (Exception ex)
         {
-            _logger.LogWarning(
-                "No speech could be recognized from audio file for JobId: {JobId}, FileId: {FileId}",
-                jobId,
-                fileId);
-            return (string.Empty, 0.0);
-        }
-        else if (result.Reason == ResultReason.Canceled)
-        {
-            var cancellation = CancellationDetails.FromResult(result);
-            _logger.LogError(
-                "Speech recognition canceled for JobId: {JobId}, FileId: {FileId}: Reason={Reason}, ErrorCode={ErrorCode}, ErrorDetails={ErrorDetails}",
-                jobId,
-                fileId,
-                cancellation.Reason,
-                cancellation.ErrorCode,
-                cancellation.ErrorDetails);
-            throw new InvalidOperationException(
-                $"Speech recognition failed for JobId={jobId}, FileId={fileId}: {cancellation.ErrorDetails}");
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                $"Unexpected recognition result for JobId={jobId}, FileId={fileId}: {result.Reason}");
+            _logger.LogError(ex,
+                "Batch transcription failed for JobId: {JobId}, FileId: {FileId}",
+                jobId, fileId);
+            throw;
         }
     }
 
     /// <summary>
-    /// 認識結果から簡易的な信頼度スコアを計算する
+    /// バッチ文字起こしジョブを作成
     /// </summary>
-    private double CalculateConfidence(SpeechRecognitionResult result)
+    private async Task<string> CreateBatchTranscriptionAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string blobUrl,
+        string language,
+        string jobId,
+        string fileId)
     {
-        // 現在の実装では、音声が認識されているかどうかのみを判定し、
-        // 認識テキストが存在する場合は固定のDefaultConfidenceScoreを返し、
-        // 認識テキストが空もしくは空白のみの場合は0.0を返します。
-        // 
-        // Azure Speech Serviceはresult.Propertiesから単語ごとの詳細な信頼度情報を提供しますが、
-        // 本関数では簡易的なスコア算出のみを意図しており、それらの詳細情報は使用していません。
-        return !string.IsNullOrWhiteSpace(result.Text) ? DefaultConfidenceScore : 0.0;
+        var requestBody = new
+        {
+            contentUrls = new[] { blobUrl },
+            locale = language,
+            displayName = $"Transcription-{jobId}-{fileId}",
+            properties = new
+            {
+                wordLevelTimestampsEnabled = false,
+                punctuationMode = "DictatedAndAutomatic",
+                profanityFilterMode = "Masked"
+            }
+        };
+
+        var content = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await httpClient.PostAsync($"{baseUrl}/transcriptions", content);
+        response.EnsureSuccessStatusCode();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<BatchTranscriptionResponse>(responseContent);
+
+        return result?.Self?.Split('/').Last() ?? throw new InvalidOperationException("Failed to get transcription ID");
+    }
+
+    /// <summary>
+    /// 文字起こし完了を待機
+    /// </summary>
+    private async Task<string> WaitForTranscriptionCompletionAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string transcriptionId,
+        string jobId,
+        string fileId)
+    {
+        var maxAttempts = 60; // 最大5分待機（5秒間隔）
+        var delaySeconds = 5;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var response = await httpClient.GetAsync($"{baseUrl}/transcriptions/{transcriptionId}");
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var status = JsonSerializer.Deserialize<BatchTranscriptionStatusResponse>(content);
+
+            _logger.LogDebug(
+                "Batch transcription {TranscriptionId} status: {Status} (attempt {Attempt}/{MaxAttempts}) for JobId: {JobId}, FileId: {FileId}",
+                transcriptionId, status?.Status, attempt + 1, maxAttempts, jobId, fileId);
+
+            if (status?.Status == "Succeeded" || status?.Status == "Failed")
+            {
+                return status.Status;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+        }
+
+        throw new TimeoutException(
+            $"Batch transcription {transcriptionId} did not complete within timeout for JobId={jobId}, FileId={fileId}");
+    }
+
+    /// <summary>
+    /// 文字起こし結果を取得
+    /// </summary>
+    private async Task<(string text, double confidence)> GetTranscriptionResultAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string transcriptionId,
+        string jobId,
+        string fileId)
+    {
+        // ファイル一覧を取得
+        var filesResponse = await httpClient.GetAsync($"{baseUrl}/transcriptions/{transcriptionId}/files");
+        filesResponse.EnsureSuccessStatusCode();
+
+        var filesContent = await filesResponse.Content.ReadAsStringAsync();
+        var files = JsonSerializer.Deserialize<BatchTranscriptionFilesResponse>(filesContent);
+
+        var contentFile = files?.Values?.FirstOrDefault(f => f.Kind == "Transcription");
+        if (contentFile == null || contentFile.Links?.ContentUrl == null)
+        {
+            throw new InvalidOperationException(
+                $"No transcription content file found for JobId={jobId}, FileId={fileId}");
+        }
+
+        // 結果ファイルをダウンロード
+        var resultResponse = await httpClient.GetAsync(contentFile.Links.ContentUrl);
+        resultResponse.EnsureSuccessStatusCode();
+
+        var resultContent = await resultResponse.Content.ReadAsStringAsync();
+        var transcriptionResult = JsonSerializer.Deserialize<BatchTranscriptionContent>(resultContent);
+
+        // すべての認識結果を結合
+        var combinedResults = transcriptionResult?.CombinedRecognizedPhrases?.FirstOrDefault();
+        if (combinedResults == null)
+        {
+            _logger.LogWarning(
+                "No recognized phrases found for JobId: {JobId}, FileId: {FileId}",
+                jobId, fileId);
+            return (string.Empty, 0.0);
+        }
+
+        return (combinedResults.Display ?? string.Empty, DefaultConfidenceScore);
+    }
+
+    /// <summary>
+    /// バッチ文字起こしジョブを削除
+    /// </summary>
+    private async Task DeleteBatchTranscriptionAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string transcriptionId)
+    {
+        try
+        {
+            await httpClient.DeleteAsync($"{baseUrl}/transcriptions/{transcriptionId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to delete batch transcription {TranscriptionId}, but continuing",
+                transcriptionId);
+        }
+    }
+
+    // Batch Transcription API レスポンスモデル
+    private class BatchTranscriptionResponse
+    {
+        [JsonPropertyName("self")]
+        public string? Self { get; set; }
+    }
+
+    private class BatchTranscriptionStatusResponse
+    {
+        [JsonPropertyName("status")]
+        public string? Status { get; set; }
+    }
+
+    private class BatchTranscriptionFilesResponse
+    {
+        [JsonPropertyName("values")]
+        public List<BatchTranscriptionFile>? Values { get; set; }
+    }
+
+    private class BatchTranscriptionFile
+    {
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
+
+        [JsonPropertyName("links")]
+        public BatchTranscriptionFileLinks? Links { get; set; }
+    }
+
+    private class BatchTranscriptionFileLinks
+    {
+        [JsonPropertyName("contentUrl")]
+        public string? ContentUrl { get; set; }
+    }
+
+    private class BatchTranscriptionContent
+    {
+        [JsonPropertyName("combinedRecognizedPhrases")]
+        public List<CombinedRecognizedPhrase>? CombinedRecognizedPhrases { get; set; }
+    }
+
+    private class CombinedRecognizedPhrase
+    {
+        [JsonPropertyName("display")]
+        public string? Display { get; set; }
     }
 }
