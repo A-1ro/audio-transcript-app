@@ -24,11 +24,8 @@ export default function UploadForm() {
   };
 
   const handleSubmit = () => {
-    // Validate one more time on submit
-    const errors = validateFiles(selectedFiles);
-    setValidationErrors(errors);
-
-    if (errors.length > 0) {
+    // Check if there are validation errors
+    if (validationErrors.length > 0) {
       return;
     }
 

@@ -13,7 +13,11 @@ export interface ValidationError {
  */
 function hasAllowedExtension(file: File): boolean {
   const fileName = file.name.toLowerCase();
-  return ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
+  const lastDotIndex = fileName.lastIndexOf('.');
+  if (lastDotIndex === -1) return false;
+  
+  const extension = fileName.substring(lastDotIndex);
+  return ALLOWED_EXTENSIONS.includes(extension);
 }
 
 /**
