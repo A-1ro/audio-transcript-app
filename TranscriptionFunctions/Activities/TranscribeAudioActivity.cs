@@ -19,12 +19,27 @@ public class TranscribeAudioActivity
     private const double DefaultConfidenceScore = 0.95;
     
     // Azure Speech Serviceの設定をキャッシュ（パフォーマンス向上のため）
-    private static readonly Lazy<(string? key, string? region, string language)> _speechServiceConfig = 
+    private static Lazy<(string? key, string? region, string language)> _speechServiceConfig =
+        CreateSpeechServiceConfig();
+
+    /// <summary>
+    /// Azure Speech Service 設定用の Lazy インスタンスを作成します。
+    /// </summary>
+    private static Lazy<(string? key, string? region, string language)> CreateSpeechServiceConfig() =>
         new(() => (
             Environment.GetEnvironmentVariable("AzureSpeechServiceKey"),
             Environment.GetEnvironmentVariable("AzureSpeechServiceRegion"),
             Environment.GetEnvironmentVariable("AzureSpeechServiceLanguage") ?? "ja-JP"
         ));
+
+    /// <summary>
+    /// テスト用: キャッシュされた Azure Speech Service 設定をリセットします。
+    /// 環境変数を変更した後に呼び出すことで、最新の値を読み込みます。
+    /// </summary>
+    internal static void ResetSpeechServiceConfigForTesting()
+    {
+        _speechServiceConfig = CreateSpeechServiceConfig();
+    }
 
     public TranscribeAudioActivity(
         ILogger<TranscribeAudioActivity> logger,
@@ -158,7 +173,7 @@ public class TranscribeAudioActivity
     /// </summary>
     private async Task<string> DownloadAudioFileAsync(string blobUrl, string fileId)
     {
-        var httpClient = _httpClientFactory.CreateClient();
+        using var httpClient = _httpClientFactory.CreateClient();
         
         // URLから拡張子を取得、取得できない場合は.wavをデフォルトとする
         var extension = Path.GetExtension(new Uri(blobUrl).LocalPath);
@@ -175,7 +190,14 @@ public class TranscribeAudioActivity
                 $"Audio file format '{extension}' is not supported. Only WAV files are currently supported.");
         }
         
-        var tempPath = Path.Combine(Path.GetTempPath(), $"{fileId}_{Guid.NewGuid()}{extension}");
+        // FileIdをサニタイズしてパストラバーサル攻撃を防ぐ
+        var sanitizedFileId = Path.GetFileName(fileId);
+        if (string.IsNullOrWhiteSpace(sanitizedFileId))
+        {
+            sanitizedFileId = "audio";
+        }
+        
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{sanitizedFileId}_{Guid.NewGuid()}{extension}");
 
         _logger.LogDebug("Downloading audio file from {BlobUrl} to {TempPath}", blobUrl, tempPath);
 
@@ -190,11 +212,23 @@ public class TranscribeAudioActivity
                     $"Status code: {response.StatusCode}, Reason: {response.ReasonPhrase}");
             }
 
-            await using var fileStream = File.Create(tempPath);
-            await response.Content.CopyToAsync(fileStream);
+            try
+            {
+                await using var fileStream = File.Create(tempPath);
+                await response.Content.CopyToAsync(fileStream);
 
-            _logger.LogDebug("Downloaded audio file to {TempPath}", tempPath);
-            return tempPath;
+                _logger.LogDebug("Downloaded audio file to {TempPath}", tempPath);
+                return tempPath;
+            }
+            catch
+            {
+                // ダウンロード失敗時に部分的なファイルを削除
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+                throw;
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -204,9 +238,10 @@ public class TranscribeAudioActivity
     }
 
     /// <summary>
-    /// Azure Speech Serviceを使用して音声を文字起こしする
-    /// 注意: RecognizeOnceAsyncは短い音声（通常15秒未満）用に設計されています。
-    /// 長い音声ファイルの場合、最初の部分のみが文字起こしされます。
+    /// Azure Speech Service のリアルタイム認識機能を使用して音声を文字起こしする。
+    /// 注意: このメソッドは Azure AI Speech の Batch Transcription API は使用しておらず、
+    /// RecognizeOnceAsync による短い音声（通常 15 秒未満）向けの単発認識のみを行います。
+    /// 長い音声ファイルの場合、最初の部分のみが文字起こしされる点に注意してください。
     /// </summary>
     private async Task<(string transcriptText, double confidence)> TranscribeWithSpeechServiceAsync(
         string speechKey,

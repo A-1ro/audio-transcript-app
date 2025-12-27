@@ -114,7 +114,6 @@ public class TranscribeAudioActivityTests
         Assert.Contains("not a valid URI", exception.Message);
     }
 
-
     [Fact]
     public async Task RunAsync_WithoutSpeechServiceConfiguration_ReturnsMockTranscription()
     {
@@ -135,6 +134,9 @@ public class TranscribeAudioActivityTests
             // 環境変数が設定されていないことを確認（デフォルトの状態）
             Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
             Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+            
+            // キャッシュをリセットして最新の環境変数を読み込む
+            TranscribeAudioActivity.ResetSpeechServiceConfigForTesting();
 
             // Act
             var result = await _activity.RunAsync(input);
@@ -174,6 +176,9 @@ public class TranscribeAudioActivityTests
             // 環境変数をクリア
             Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
             Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+            
+            // キャッシュをリセットして最新の環境変数を読み込む
+            TranscribeAudioActivity.ResetSpeechServiceConfigForTesting();
 
             // Act
             var result = await _activity.RunAsync(input);
