@@ -98,6 +98,24 @@ public class TranscribeAudioActivityTests
     }
 
     [Fact]
+    public async Task RunAsync_WithInvalidBlobUrl_ThrowsArgumentException()
+    {
+        // Arrange
+        var input = new TranscriptionInput
+        {
+            JobId = "job-1",
+            FileId = "file-1",
+            BlobUrl = "not-a-valid-url"
+        };
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => _activity.RunAsync(input));
+        Assert.Contains("not a valid URI", exception.Message);
+    }
+
+
+    [Fact]
     public async Task RunAsync_WithoutSpeechServiceConfiguration_ReturnsMockTranscription()
     {
         // Arrange
@@ -108,19 +126,32 @@ public class TranscribeAudioActivityTests
             BlobUrl = "https://storage.blob.core.windows.net/audio/file-001.wav"
         };
 
-        // 環境変数が設定されていないことを確認（デフォルトの状態）
-        Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
-        Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+        // 環境変数の元の値を保存
+        var originalKey = Environment.GetEnvironmentVariable("AzureSpeechServiceKey");
+        var originalRegion = Environment.GetEnvironmentVariable("AzureSpeechServiceRegion");
 
-        // Act
-        var result = await _activity.RunAsync(input);
+        try
+        {
+            // 環境変数が設定されていないことを確認（デフォルトの状態）
+            Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
+            Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(input.FileId, result.FileId);
-        Assert.Equal(TranscriptionStatus.Completed, result.Status);
-        Assert.Contains("Mock transcription", result.TranscriptText);
-        Assert.True(result.Confidence > 0);
+            // Act
+            var result = await _activity.RunAsync(input);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(input.FileId, result.FileId);
+            Assert.Equal(TranscriptionStatus.Completed, result.Status);
+            Assert.Contains("Mock transcription", result.TranscriptText);
+            Assert.True(result.Confidence > 0);
+        }
+        finally
+        {
+            // 環境変数を元に戻す
+            Environment.SetEnvironmentVariable("AzureSpeechServiceKey", originalKey);
+            Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", originalRegion);
+        }
     }
 
     [Fact]
@@ -134,25 +165,38 @@ public class TranscribeAudioActivityTests
             BlobUrl = "https://storage.blob.core.windows.net/audio/file-002.wav"
         };
 
-        // 環境変数をクリア
-        Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
-        Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+        // 環境変数の元の値を保存
+        var originalKey = Environment.GetEnvironmentVariable("AzureSpeechServiceKey");
+        var originalRegion = Environment.GetEnvironmentVariable("AzureSpeechServiceRegion");
 
-        // Act
-        var result = await _activity.RunAsync(input);
+        try
+        {
+            // 環境変数をクリア
+            Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
+            Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(TranscriptionStatus.Completed, result.Status);
-        
-        // ログに警告が記録されていることを検証
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Azure Speech Service credentials not configured")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()!),
-            Times.Once);
+            // Act
+            var result = await _activity.RunAsync(input);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(TranscriptionStatus.Completed, result.Status);
+            
+            // ログに警告が記録されていることを検証
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Warning,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Azure Speech Service credentials not configured")),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()!),
+                Times.Once);
+        }
+        finally
+        {
+            // 環境変数を元に戻す
+            Environment.SetEnvironmentVariable("AzureSpeechServiceKey", originalKey);
+            Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", originalRegion);
+        }
     }
 }

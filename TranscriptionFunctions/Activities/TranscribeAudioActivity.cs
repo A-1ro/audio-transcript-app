@@ -17,6 +17,14 @@ public class TranscribeAudioActivity
 
     // デフォルトの信頼度スコア（Speech Serviceが詳細な信頼度を提供しない場合）
     private const double DefaultConfidenceScore = 0.95;
+    
+    // Azure Speech Serviceの設定をキャッシュ（パフォーマンス向上のため）
+    private static readonly Lazy<(string? key, string? region, string language)> _speechServiceConfig = 
+        new(() => (
+            Environment.GetEnvironmentVariable("AzureSpeechServiceKey"),
+            Environment.GetEnvironmentVariable("AzureSpeechServiceRegion"),
+            Environment.GetEnvironmentVariable("AzureSpeechServiceLanguage") ?? "ja-JP"
+        ));
 
     public TranscribeAudioActivity(
         ILogger<TranscribeAudioActivity> logger,
@@ -54,6 +62,12 @@ public class TranscribeAudioActivity
             throw new ArgumentException("BlobUrl cannot be null or empty", nameof(input));
         }
 
+        // BlobUrlが有効なURIかを検証
+        if (!Uri.TryCreate(input.BlobUrl, UriKind.Absolute, out _))
+        {
+            throw new ArgumentException($"BlobUrl is not a valid URI: {input.BlobUrl}", nameof(input));
+        }
+
         _logger.LogInformation(
             "Transcribing audio for JobId: {JobId}, FileId: {FileId}",
             input.JobId,
@@ -61,9 +75,8 @@ public class TranscribeAudioActivity
 
         try
         {
-            // Azure Speech Serviceの設定を環境変数から取得
-            var speechKey = Environment.GetEnvironmentVariable("AzureSpeechServiceKey");
-            var speechRegion = Environment.GetEnvironmentVariable("AzureSpeechServiceRegion");
+            // Azure Speech Serviceの設定をキャッシュから取得
+            var (speechKey, speechRegion, recognitionLanguage) = _speechServiceConfig.Value;
 
             if (string.IsNullOrWhiteSpace(speechKey) || string.IsNullOrWhiteSpace(speechRegion))
             {
@@ -92,7 +105,10 @@ public class TranscribeAudioActivity
                 var (transcriptText, confidence) = await TranscribeWithSpeechServiceAsync(
                     speechKey,
                     speechRegion,
-                    tempAudioPath);
+                    recognitionLanguage,
+                    tempAudioPath,
+                    input.JobId,
+                    input.FileId);
 
                 _logger.LogInformation(
                     "Transcription completed for JobId: {JobId}, FileId: {FileId}, Confidence: {Confidence}",
@@ -151,13 +167,21 @@ public class TranscribeAudioActivity
             extension = ".wav";
         }
         
+        // 現在はWAVファイルのみサポート（Speech SDKの制限）
+        var supportedExtensions = new[] { ".wav" };
+        if (!supportedExtensions.Contains(extension.ToLowerInvariant()))
+        {
+            throw new NotSupportedException(
+                $"Audio file format '{extension}' is not supported. Only WAV files are currently supported.");
+        }
+        
         var tempPath = Path.Combine(Path.GetTempPath(), $"{fileId}_{Guid.NewGuid()}{extension}");
 
         _logger.LogDebug("Downloading audio file from {BlobUrl} to {TempPath}", blobUrl, tempPath);
 
         try
         {
-            var response = await httpClient.GetAsync(blobUrl);
+            using var response = await httpClient.GetAsync(blobUrl);
             
             if (!response.IsSuccessStatusCode)
             {
@@ -181,14 +205,19 @@ public class TranscribeAudioActivity
 
     /// <summary>
     /// Azure Speech Serviceを使用して音声を文字起こしする
+    /// 注意: RecognizeOnceAsyncは短い音声（通常15秒未満）用に設計されています。
+    /// 長い音声ファイルの場合、最初の部分のみが文字起こしされます。
     /// </summary>
     private async Task<(string transcriptText, double confidence)> TranscribeWithSpeechServiceAsync(
         string speechKey,
         string speechRegion,
-        string audioFilePath)
+        string recognitionLanguage,
+        string audioFilePath,
+        string jobId,
+        string fileId)
     {
         var speechConfig = SpeechConfig.FromSubscription(speechKey, speechRegion);
-        speechConfig.SpeechRecognitionLanguage = "ja-JP"; // 日本語を設定
+        speechConfig.SpeechRecognitionLanguage = recognitionLanguage;
 
         using var audioConfig = AudioConfig.FromWavFileInput(audioFilePath);
         using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
@@ -201,33 +230,43 @@ public class TranscribeAudioActivity
         }
         else if (result.Reason == ResultReason.NoMatch)
         {
-            _logger.LogWarning("No speech could be recognized from audio file: {AudioFile}", audioFilePath);
+            _logger.LogWarning(
+                "No speech could be recognized from audio file for JobId: {JobId}, FileId: {FileId}",
+                jobId,
+                fileId);
             return (string.Empty, 0.0);
         }
         else if (result.Reason == ResultReason.Canceled)
         {
             var cancellation = CancellationDetails.FromResult(result);
             _logger.LogError(
-                "Speech recognition canceled: Reason={Reason}, ErrorCode={ErrorCode}, ErrorDetails={ErrorDetails}",
+                "Speech recognition canceled for JobId: {JobId}, FileId: {FileId}: Reason={Reason}, ErrorCode={ErrorCode}, ErrorDetails={ErrorDetails}",
+                jobId,
+                fileId,
                 cancellation.Reason,
                 cancellation.ErrorCode,
                 cancellation.ErrorDetails);
-            throw new InvalidOperationException($"Speech recognition failed: {cancellation.ErrorDetails}");
+            throw new InvalidOperationException(
+                $"Speech recognition failed for JobId={jobId}, FileId={fileId}: {cancellation.ErrorDetails}");
         }
         else
         {
-            throw new InvalidOperationException($"Unexpected recognition result: {result.Reason}");
+            throw new InvalidOperationException(
+                $"Unexpected recognition result for JobId={jobId}, FileId={fileId}: {result.Reason}");
         }
     }
 
     /// <summary>
-    /// 認識結果から信頼度を計算する
+    /// 認識結果から簡易的な信頼度スコアを計算する
     /// </summary>
     private double CalculateConfidence(SpeechRecognitionResult result)
     {
-        // Azure Speech Serviceは単語ごとの信頼度を提供しますが、
-        // ここでは簡易的に全体の品質スコアとしてDefaultConfidenceScoreを返します
-        // 実際の実装では、result.Propertiesから詳細な信頼度情報を取得可能
+        // 現在の実装では、音声が認識されているかどうかのみを判定し、
+        // 認識テキストが存在する場合は固定のDefaultConfidenceScoreを返し、
+        // 認識テキストが空もしくは空白のみの場合は0.0を返します。
+        // 
+        // Azure Speech Serviceはresult.Propertiesから単語ごとの詳細な信頼度情報を提供しますが、
+        // 本関数では簡易的なスコア算出のみを意図しており、それらの詳細情報は使用していません。
         return !string.IsNullOrWhiteSpace(result.Text) ? DefaultConfidenceScore : 0.0;
     }
 }
