@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
 import { useUpload, type UploadState, isSasUrlExpired } from "./useUpload";
+import { validateFiles } from "./validation";
 
 // 状態に応じたメッセージを取得
 function getStateMessage(state: UploadState): string {
