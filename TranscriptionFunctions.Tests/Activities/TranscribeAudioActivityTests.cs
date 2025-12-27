@@ -96,4 +96,63 @@ public class TranscribeAudioActivityTests
         await Assert.ThrowsAsync<ArgumentException>(
             () => _activity.RunAsync(input));
     }
+
+    [Fact]
+    public async Task RunAsync_WithoutSpeechServiceConfiguration_ReturnsMockTranscription()
+    {
+        // Arrange
+        var input = new TranscriptionInput
+        {
+            JobId = "test-job-123",
+            FileId = "file-001",
+            BlobUrl = "https://storage.blob.core.windows.net/audio/file-001.wav"
+        };
+
+        // 環境変数が設定されていないことを確認（デフォルトの状態）
+        Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
+        Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+
+        // Act
+        var result = await _activity.RunAsync(input);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(input.FileId, result.FileId);
+        Assert.Equal(TranscriptionStatus.Completed, result.Status);
+        Assert.Contains("Mock transcription", result.TranscriptText);
+        Assert.True(result.Confidence > 0);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithMockTranscription_LogsWarningAboutMissingConfiguration()
+    {
+        // Arrange
+        var input = new TranscriptionInput
+        {
+            JobId = "test-job-456",
+            FileId = "file-002",
+            BlobUrl = "https://storage.blob.core.windows.net/audio/file-002.wav"
+        };
+
+        // 環境変数をクリア
+        Environment.SetEnvironmentVariable("AzureSpeechServiceKey", null);
+        Environment.SetEnvironmentVariable("AzureSpeechServiceRegion", null);
+
+        // Act
+        var result = await _activity.RunAsync(input);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(TranscriptionStatus.Completed, result.Status);
+        
+        // ログに警告が記録されていることを検証
+        _mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Azure Speech Service credentials not configured")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()!),
+            Times.Once);
+    }
 }
