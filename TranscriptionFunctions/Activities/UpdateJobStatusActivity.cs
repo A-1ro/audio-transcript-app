@@ -24,6 +24,21 @@ public class UpdateJobStatusActivity
     [Function(nameof(UpdateJobStatusActivity))]
     public async Task RunAsync([ActivityTrigger] JobStatusUpdate update)
     {
+        if (update == null)
+        {
+            throw new ArgumentNullException(nameof(update));
+        }
+
+        if (string.IsNullOrWhiteSpace(update.JobId))
+        {
+            throw new ArgumentException("JobId cannot be null or empty", nameof(update));
+        }
+
+        if (string.IsNullOrWhiteSpace(update.Status))
+        {
+            throw new ArgumentException("Status cannot be null or empty", nameof(update));
+        }
+
         _logger.LogInformation(
             "Updating job status for JobId: {JobId} to {Status}",
             update.JobId,

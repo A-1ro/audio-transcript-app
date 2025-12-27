@@ -25,6 +25,26 @@ public class TranscribeAudioActivity
     [Function(nameof(TranscribeAudioActivity))]
     public async Task<TranscriptionResult> RunAsync([ActivityTrigger] TranscriptionInput input)
     {
+        if (input == null)
+        {
+            throw new ArgumentNullException(nameof(input));
+        }
+
+        if (string.IsNullOrWhiteSpace(input.JobId))
+        {
+            throw new ArgumentException("JobId cannot be null or empty", nameof(input));
+        }
+
+        if (string.IsNullOrWhiteSpace(input.FileId))
+        {
+            throw new ArgumentException("FileId cannot be null or empty", nameof(input));
+        }
+
+        if (string.IsNullOrWhiteSpace(input.BlobUrl))
+        {
+            throw new ArgumentException("BlobUrl cannot be null or empty", nameof(input));
+        }
+
         _logger.LogInformation(
             "Transcribing audio for JobId: {JobId}, FileId: {FileId}",
             input.JobId,
@@ -41,7 +61,7 @@ public class TranscribeAudioActivity
                 FileId = input.FileId,
                 TranscriptText = $"Transcribed text for {input.FileId}",
                 Confidence = 0.95,
-                Status = "Completed"
+                Status = TranscriptionStatus.Completed
             };
 
             _logger.LogInformation(
@@ -65,7 +85,7 @@ public class TranscribeAudioActivity
                 FileId = input.FileId,
                 TranscriptText = string.Empty,
                 Confidence = 0.0,
-                Status = "Failed"
+                Status = TranscriptionStatus.Failed
             };
         }
     }

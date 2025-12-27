@@ -26,18 +26,21 @@ public class TranscriptionOrchestrator
 
         logger.LogInformation("Starting transcription orchestration for JobId: {JobId}", jobId);
 
+        // RetryOptions設定 - 一時的なエラーに対する再試行
+        var retryPolicy = new RetryPolicy(
+            maxNumberOfAttempts: 3,
+            firstRetryInterval: TimeSpan.FromSeconds(5),
+            backoffCoefficient: 2.0);
+        var retryOptions = new TaskOptions(new TaskRetryOptions(retryPolicy));
+
         try
         {
-            // RetryOptions設定 - 一時的なエラーに対する再試行
-            var retryPolicy = new RetryPolicy(
-                maxNumberOfAttempts: 3,
-                firstRetryInterval: TimeSpan.FromSeconds(5),
-                backoffCoefficient: 2.0);
-            var retryOptions = new TaskOptions(new TaskRetryOptions(retryPolicy));
 
             // 1. ジョブ情報取得
+            // NOTE: 現在のオーケストレーターではjobInfoは使用していませんが、
+            // 将来的なバリデーションやビジネスロジックのために取得しています
             logger.LogInformation("Retrieving job info for JobId: {JobId}", jobId);
-            var jobInfo = await context.CallActivityAsync<JobInfo>(
+            _ = await context.CallActivityAsync<JobInfo>(
                 nameof(GetJobInfoActivity),
                 jobId,
                 retryOptions);
@@ -51,15 +54,15 @@ public class TranscriptionOrchestrator
 
             if (audioFiles == null || audioFiles.Count == 0)
             {
-                logger.LogWarning("No audio files found for JobId: {JobId}", jobId);
+                logger.LogWarning("No audio files found for JobId: {JobId}. Marking as Failed.", jobId);
                 
-                // ファイルが無い場合は完了扱い
+                // ファイルが無い場合はデータ整合性の問題として失敗扱い
                 await context.CallActivityAsync(
                     nameof(UpdateJobStatusActivity),
                     new JobStatusUpdate
                     {
                         JobId = jobId,
-                        Status = "Completed",
+                        Status = JobStatus.Failed,
                         CompletedAt = context.CurrentUtcDateTime
                     },
                     retryOptions);
@@ -70,9 +73,7 @@ public class TranscriptionOrchestrator
             logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
 
             // 3. Activity fan-out - 並列文字起こし実行
-            var transcriptionTasks = new List<Task<TranscriptionResult>>();
-
-            foreach (var audioFile in audioFiles)
+            var transcriptionTasks = audioFiles.Select(audioFile =>
             {
                 var input = new TranscriptionInput
                 {
@@ -81,46 +82,56 @@ public class TranscriptionOrchestrator
                     BlobUrl = audioFile.BlobUrl
                 };
 
-                var task = context.CallActivityAsync<TranscriptionResult>(
+                return context.CallActivityAsync<TranscriptionResult>(
                     nameof(TranscribeAudioActivity),
                     input,
                     retryOptions);
-
-                transcriptionTasks.Add(task);
-            }
+            }).ToList();
 
             // 4. 結果集約 - fan-in
             logger.LogInformation("Waiting for transcription results for JobId: {JobId}", jobId);
             var results = await Task.WhenAll(transcriptionTasks);
 
             // 5. 結果分析と状態決定
-            var successCount = results.Count(r => r.Status == "Completed");
-            var failureCount = results.Count(r => r.Status == "Failed");
+            var successCount = results.Count(r => r.Status == TranscriptionStatus.Completed);
+            var failureCount = results.Count(r => r.Status == TranscriptionStatus.Failed);
+            var unexpectedCount = results.Count(r => 
+                r.Status != TranscriptionStatus.Completed && 
+                r.Status != TranscriptionStatus.Failed);
             var totalCount = results.Length;
 
+            if (unexpectedCount > 0)
+            {
+                logger.LogWarning(
+                    "Found {UnexpectedCount} results with unexpected status for JobId: {JobId}",
+                    unexpectedCount,
+                    jobId);
+            }
+
             logger.LogInformation(
-                "Transcription results for JobId: {JobId} - Success: {SuccessCount}, Failed: {FailureCount}, Total: {TotalCount}",
+                "Transcription results for JobId: {JobId} - Success: {SuccessCount}, Failed: {FailureCount}, Unexpected: {UnexpectedCount}, Total: {TotalCount}",
                 jobId,
                 successCount,
                 failureCount,
+                unexpectedCount,
                 totalCount);
 
             // 6. ジョブステータス更新
             string finalStatus;
-            if (failureCount == 0)
+            if (failureCount == 0 && unexpectedCount == 0)
             {
                 // 全て成功
-                finalStatus = "Completed";
+                finalStatus = JobStatus.Completed;
             }
             else if (successCount > 0)
             {
-                // 一部成功、一部失敗
-                finalStatus = "PartiallyFailed";
+                // 一部成功、一部失敗または予期しないステータス
+                finalStatus = JobStatus.PartiallyFailed;
             }
             else
             {
-                // 全て失敗
-                finalStatus = "Failed";
+                // 全て失敗または予期しないステータス
+                finalStatus = JobStatus.Failed;
             }
 
             await context.CallActivityAsync(
@@ -146,6 +157,8 @@ public class TranscriptionOrchestrator
                 jobId);
 
             // エラー時のステータス更新
+            // NOTE: ステータス更新に失敗した場合でも、元の例外を再スローしてオーケストレーション全体を失敗させます。
+            // これにより、Durable Functionsの再試行メカニズムが全体のオーケストレーションを再実行します。
             try
             {
                 await context.CallActivityAsync(
@@ -153,9 +166,10 @@ public class TranscriptionOrchestrator
                     new JobStatusUpdate
                     {
                         JobId = jobId,
-                        Status = "Failed",
+                        Status = JobStatus.Failed,
                         CompletedAt = context.CurrentUtcDateTime
-                    });
+                    },
+                    retryOptions);
             }
             catch (Exception updateEx)
             {
@@ -163,6 +177,7 @@ public class TranscriptionOrchestrator
                     updateEx,
                     "Failed to update job status to Failed for JobId: {JobId}",
                     jobId);
+                // ステータス更新の失敗は記録するが、元の例外を優先して再スロー
             }
 
             throw;

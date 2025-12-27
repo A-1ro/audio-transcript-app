@@ -63,4 +63,30 @@ public class UpdateJobStatusActivityTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
     }
+
+    [Fact]
+    public async Task RunAsync_WithNullUpdate_ThrowsArgumentNullException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => _activity.RunAsync(null!));
+    }
+
+    [Theory]
+    [InlineData("", "Completed")]
+    [InlineData("job-1", "")]
+    public async Task RunAsync_WithInvalidUpdate_ThrowsArgumentException(string jobId, string status)
+    {
+        // Arrange
+        var update = new JobStatusUpdate
+        {
+            JobId = jobId,
+            Status = status,
+            CompletedAt = DateTime.UtcNow
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _activity.RunAsync(update));
+    }
 }

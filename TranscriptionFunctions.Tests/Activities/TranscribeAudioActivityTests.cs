@@ -64,4 +64,34 @@ public class TranscribeAudioActivityTests
         // Assert
         Assert.Equal(fileId, result.FileId);
     }
+
+    [Fact]
+    public async Task RunAsync_WithNullInput_ThrowsArgumentNullException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => _activity.RunAsync(null!));
+    }
+
+    [Theory]
+    [InlineData("", "file-1", "https://example.com/audio1.wav")]
+    [InlineData("job-1", "", "https://example.com/audio1.wav")]
+    [InlineData("job-1", "file-1", "")]
+    public async Task RunAsync_WithInvalidInput_ThrowsArgumentException(
+        string jobId,
+        string fileId,
+        string blobUrl)
+    {
+        // Arrange
+        var input = new TranscriptionInput
+        {
+            JobId = jobId,
+            FileId = fileId,
+            BlobUrl = blobUrl
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _activity.RunAsync(input));
+    }
 }

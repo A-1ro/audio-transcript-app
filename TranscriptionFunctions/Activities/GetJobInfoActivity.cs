@@ -25,6 +25,11 @@ public class GetJobInfoActivity
     [Function(nameof(GetJobInfoActivity))]
     public async Task<JobInfo> RunAsync([ActivityTrigger] string jobId)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        }
+
         _logger.LogInformation("Getting job info for JobId: {JobId}", jobId);
 
         // TODO: 実際にはCosmosDBなどからジョブ情報を取得
@@ -34,7 +39,7 @@ public class GetJobInfoActivity
         var jobInfo = new JobInfo
         {
             JobId = jobId,
-            Status = "Processing"
+            Status = JobStatus.Processing
         };
 
         _logger.LogInformation("Job info retrieved for JobId: {JobId}", jobId);

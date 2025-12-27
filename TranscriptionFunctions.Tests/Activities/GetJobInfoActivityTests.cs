@@ -54,4 +54,15 @@ public class GetJobInfoActivityTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
     }
+
+    [Theory]
+    [InlineData(null!)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_WithInvalidJobId_ThrowsArgumentException(string? invalidJobId)
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _activity.RunAsync(invalidJobId!));
+    }
 }

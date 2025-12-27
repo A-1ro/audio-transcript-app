@@ -52,4 +52,15 @@ public class GetAudioFilesActivityTests
         // Assert
         Assert.Equal(2, result.Count);
     }
+
+    [Theory]
+    [InlineData(null!)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_WithInvalidJobId_ThrowsArgumentException(string? invalidJobId)
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _activity.RunAsync(invalidJobId!));
+    }
 }

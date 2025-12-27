@@ -25,6 +25,11 @@ public class GetAudioFilesActivity
     [Function(nameof(GetAudioFilesActivity))]
     public async Task<List<AudioFileInfo>> RunAsync([ActivityTrigger] string jobId)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        }
+
         _logger.LogInformation("Getting audio files for JobId: {JobId}", jobId);
 
         // TODO: 実際にはCosmosDBやBlobStorageから音声ファイル一覧を取得
