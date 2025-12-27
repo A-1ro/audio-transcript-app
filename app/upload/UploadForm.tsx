@@ -1,10 +1,24 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
+import ValidationError from "./ValidationError";
+import Toast from "./Toast";
+import ErrorModal from "./ErrorModal";
+import { validateFiles, type ValidationError as ValidationErrorType } from "./validation";
 import { useUpload, type UploadState, isSasUrlExpired } from "./useUpload";
-import { validateFiles } from "./validation";
+
+interface ToastState {
+  message: string;
+  type: "error" | "success" | "info";
+}
+
+interface ErrorModalState {
+  title: string;
+  message: string;
+  details?: string;
+}
 
 // 状態に応じたメッセージを取得
 function getStateMessage(state: UploadState): string {
@@ -22,121 +36,179 @@ function getStateMessage(state: UploadState): string {
 
 export default function UploadForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const [successMessage, setSuccessMessage] = useState<string>("");
+  const [validationErrors, setValidationErrors] = useState<ValidationErrorType[]>([]);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
   const { state, uploadedFiles, isUploading, uploadFiles, resetUpload } = useUpload();
 
   const handleFilesSelected = (newFiles: File[]) => {
-    setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
-    setErrorMessage("");
-    setSuccessMessage("");
+    const updatedFiles = [...selectedFiles, ...newFiles];
+    setSelectedFiles(updatedFiles);
+    
+    // Validate files immediately after selection
+    const errors = validateFiles(updatedFiles);
+    setValidationErrors(errors);
   };
 
   const handleRemoveFile = (index: number) => {
-    setSelectedFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+    const updatedFiles = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(updatedFiles);
+    
+    // Revalidate after removal
+    const errors = validateFiles(updatedFiles);
+    setValidationErrors(errors);
   };
 
   const handleSubmit = async () => {
-    if (selectedFiles.length === 0) {
-      setErrorMessage("ファイルを選択してください");
+    // Validate before submission
+    const errors = validateFiles(selectedFiles);
+    if (errors.length > 0) {
+      setValidationErrors(errors);
       return;
     }
 
-    setErrorMessage("");
-    setSuccessMessage("");
+    setValidationErrors([]);
 
     try {
       const results = await uploadFiles(selectedFiles);
 
       // Check if all uploads succeeded
       const successCount = results.filter((r) => r.status === "success").length;
-      if (successCount > 0) {
-        setSuccessMessage(
-          `${successCount} ファイルのアップロードが完了しました`
-        );
-        // Store blob URLs for job creation
+      const errorCount = results.filter((r) => r.status === "error").length;
+
+      if (successCount > 0 && errorCount === 0) {
+        // All uploads successful - show toast and proceed to job creation
         const blobUrls = results
           .filter((f) => f.status === "success")
           .map((f) => ({
             fileName: f.file.name,
             blobUrl: f.blobUrl,
           }));
-        console.log("Uploaded files:", blobUrls);
+
+        // Create job
+        try {
+          const jobResponse = await fetch("/api/jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audioFiles: blobUrls,
+            }),
+          });
+
+          if (!jobResponse.ok) {
+            const errorData = await jobResponse.json().catch(() => ({}));
+            
+            if (jobResponse.status >= 500) {
+              // Server error - show modal
+              setErrorModal({
+                title: "サーバーエラー",
+                message: "ジョブの作成中にサーバーで問題が発生しました。",
+                details: `ステータスコード: ${jobResponse.status}`,
+              });
+            } else {
+              setErrorModal({
+                title: "ジョブ作成エラー",
+                message: errorData.message || "ジョブの作成に失敗しました。",
+                details: `ステータスコード: ${jobResponse.status}`,
+              });
+            }
+            return;
+          }
+
+          const { jobId } = await jobResponse.json();
+
+          // Success - show toast
+          setToast({
+            message: `ジョブを作成しました (ID: ${jobId})`,
+            type: "success",
+          });
+          
+          // Reset form
+          setSelectedFiles([]);
+          setValidationErrors([]);
+          resetUpload();
+        } catch (jobError) {
+          // Network error during job creation - show toast
+          console.error("Job creation error:", jobError);
+          setToast({
+            message: "ジョブ作成時に通信に失敗しました。ネットワーク接続を確認してください。",
+            type: "error",
+          });
+        }
+      } else if (errorCount > 0) {
+        // Some uploads failed - show error details
+        const firstError = results.find((r) => r.status === "error");
+        if (firstError && firstError.error) {
+          // Check for specific error types
+          if (isSasUrlExpired(firstError.error)) {
+            setErrorModal({
+              title: "SAS URL の有効期限切れ",
+              message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
+              details: firstError.error,
+            });
+          } else {
+            setErrorModal({
+              title: "アップロードエラー",
+              message: `${errorCount} ファイルのアップロードに失敗しました。`,
+              details: firstError.error,
+            });
+          }
+        }
       }
     } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : "アップロードに失敗しました";
-
-      // Check if SAS URL expired using the helper function
+      // Network error during SAS URL fetch or upload - handle appropriately
+      console.error("Upload error:", error);
+      const errorMsg = error instanceof Error ? error.message : "アップロードに失敗しました";
+      
+      // Check if it's a SAS URL expiration
       if (isSasUrlExpired(errorMsg)) {
-        setErrorMessage(
-          "アップロードURLの有効期限が切れました。もう一度アップロードしてください。"
-        );
+        setErrorModal({
+          title: "SAS URL の有効期限切れ",
+          message: "署名 URL の有効期限が切れています。ページを更新して再度お試しください。",
+          details: errorMsg,
+        });
+      } else if (errorMsg.toLowerCase().includes("failed to get sas")) {
+        setErrorModal({
+          title: "エラーが発生しました",
+          message: "SAS URL の取得に失敗しました。",
+          details: errorMsg,
+        });
       } else {
-        setErrorMessage(errorMsg);
+        // Network error - show toast
+        setToast({
+          message: "通信に失敗しました。ネットワーク接続を確認してください。",
+          type: "error",
+        });
       }
     }
   };
 
+  const handleRetrySubmit = async () => {
+    setErrorModal(null);
+    await handleSubmit();
+  };
+
   const handleReset = () => {
     setSelectedFiles([]);
-    setErrorMessage("");
-    setSuccessMessage("");
+    setValidationErrors([]);
+    setToast(null);
+    setErrorModal(null);
     resetUpload();
   };
 
   return (
     <div className="max-w-4xl mx-auto">
       <FileDropZone onFilesSelected={handleFilesSelected} />
-
-      {errorMessage && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-5 w-5 text-red-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-red-800">{errorMessage}</p>
-            </div>
-          </div>
+      
+      {/* Display all validation errors */}
+      {validationErrors.length > 0 && (
+        <div className="space-y-2 mt-4">
+          {validationErrors.map((error, index) => (
+            <ValidationError key={`${error.type}-${index}`} message={error.message} />
+          ))}
         </div>
       )}
-
-      {successMessage && (
-        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-5 w-5 text-green-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-green-800">
-                {successMessage}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
+      
       <FileList files={selectedFiles} onRemoveFile={isUploading ? undefined : handleRemoveFile} />
 
       {/* 状態メッセージ */}
@@ -173,9 +245,9 @@ export default function UploadForm() {
         <div className="mt-8 space-y-4">
           <button
             onClick={handleSubmit}
-            disabled={isUploading}
+            disabled={isUploading || validationErrors.length > 0}
             className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
-              isUploading
+              isUploading || validationErrors.length > 0
                 ? "bg-gray-400 cursor-not-allowed text-gray-200"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
@@ -193,6 +265,24 @@ export default function UploadForm() {
             </button>
           )}
         </div>
+      )}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {errorModal && (
+        <ErrorModal
+          title={errorModal.title}
+          message={errorModal.message}
+          details={errorModal.details}
+          onClose={() => setErrorModal(null)}
+          onRetry={handleRetrySubmit}
+        />
       )}
     </div>
   );
