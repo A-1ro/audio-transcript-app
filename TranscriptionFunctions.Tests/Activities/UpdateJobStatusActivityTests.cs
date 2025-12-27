@@ -82,11 +82,14 @@ public class UpdateJobStatusActivityTests
     }
 
     [Theory]
-    [InlineData("", "Completed")]
+    [InlineData("", nameof(JobStatus.Completed))]
     [InlineData("job-1", "")]
-    public async Task RunAsync_WithInvalidUpdate_ThrowsArgumentException(string jobId, string status)
+    public async Task RunAsync_WithInvalidUpdate_ThrowsArgumentException(string jobId, string statusValue)
     {
         // Arrange
+        // Use actual constant value if statusValue is a valid constant name, otherwise use empty string
+        var status = statusValue == nameof(JobStatus.Completed) ? JobStatus.Completed : statusValue;
+        
         var update = new JobStatusUpdate
         {
             JobId = jobId,
