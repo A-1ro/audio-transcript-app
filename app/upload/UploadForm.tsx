@@ -3,10 +3,10 @@
 import { useState } from "react";
 import FileDropZone from "./FileDropZone";
 import FileList from "./FileList";
-import { useUpload } from "./useUpload";
+import { useUpload, type UploadState, isSasUrlExpired } from "./useUpload";
 
 // 状態に応じたメッセージを取得
-function getStateMessage(state: string): string {
+function getStateMessage(state: UploadState): string {
   switch (state) {
     case "UploadingToBlob":
       return "Blob Storageにアップロード中...";
@@ -66,9 +66,8 @@ export default function UploadForm() {
       const errorMsg =
         error instanceof Error ? error.message : "アップロードに失敗しました";
 
-      // Check if SAS URL expired
-      const isSasExpired = errorMsg.toLowerCase().includes("sas") && errorMsg.toLowerCase().includes("expired");
-      if (isSasExpired) {
+      // Check if SAS URL expired using the helper function
+      if (isSasUrlExpired(errorMsg)) {
         setErrorMessage(
           "アップロードURLの有効期限が切れました。もう一度アップロードしてください。"
         );

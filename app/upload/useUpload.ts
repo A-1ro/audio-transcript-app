@@ -22,21 +22,42 @@ interface UploadInfo {
   blobUrl: string;
 }
 
-interface UploadedFile {
+export interface UploadedFile {
   file: File;
   blobUrl: string;
   status: "pending" | "uploading" | "success" | "error";
   error?: string;
 }
 
-interface UseUploadResult {
+/**
+ * Result interface for the useUpload hook
+ */
+export interface UseUploadResult {
+  /** Current state of the upload workflow */
   state: UploadState;
+  /** Array of uploaded files with their status */
   uploadedFiles: UploadedFile[];
+  /** Whether files are currently being uploaded */
   isUploading: boolean;
+  /** Upload files to Azure Blob Storage and track their progress */
   uploadFiles: (files: File[]) => Promise<UploadedFile[]>;
+  /** Reset the upload state and clear all files */
   resetUpload: () => void;
 }
 
+/**
+ * Helper function to check if an error message indicates an expired SAS URL
+ */
+export function isSasUrlExpired(errorMessage: string): boolean {
+  const lowerErrorMessage = errorMessage.toLowerCase();
+  return lowerErrorMessage.includes("sas") && lowerErrorMessage.includes("expired");
+}
+
+/**
+ * Custom hook for managing file uploads to Azure Blob Storage
+ * Handles state transitions through the upload workflow:
+ * Idle → FilesSelected → UploadingToBlob → JobCreated → Processing
+ */
 export function useUpload(): UseUploadResult {
   const [state, setState] = useState<UploadState>("Idle");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -92,10 +113,10 @@ export function useUpload(): UseUploadResult {
       // This typically occurs in development when using mock URLs
       if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
         // Check if we're using a mock URL (not a real Azure endpoint)
+        // Note: In production with real Azure Blob Storage, this mock handling won't be triggered
         if (uploadUrl.includes("mockstorageaccount")) {
           console.warn("Upload blocked - using mock URL in development mode");
           // In development with mock URLs, treat this as success
-          // In production with real Azure Blob Storage, this won't happen
           return;
         }
         // For real URLs, this is a genuine network error
@@ -177,7 +198,7 @@ export function useUpload(): UseUploadResult {
           );
 
           // If SAS URL expired, throw error to allow retry
-          if (errorMessage.toLowerCase().includes("sas") && errorMessage.toLowerCase().includes("expired")) {
+          if (isSasUrlExpired(errorMessage)) {
             throw error;
           }
         }
@@ -188,7 +209,16 @@ export function useUpload(): UseUploadResult {
       
       return results;
     } catch (error) {
-      setState("FilesSelected");
+      // On error, check if any files were successfully uploaded
+      const hasSuccessfulUploads = uploadedFiles.some(f => f.status === "success");
+      
+      // If files were partially uploaded, keep the JobCreated state to allow retry
+      // Otherwise, return to FilesSelected state
+      if (hasSuccessfulUploads) {
+        setState("JobCreated");
+      } else {
+        setState("FilesSelected");
+      }
       throw error;
     } finally {
       setIsUploading(false);
