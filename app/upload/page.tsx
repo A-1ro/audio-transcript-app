@@ -5,12 +5,18 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-8 flex items-center justify-between">
           <Link
             href="/"
             className="text-blue-600 hover:text-blue-800 text-sm font-medium"
           >
             ← ホームに戻る
+          </Link>
+          <Link
+            href="/jobs"
+            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+          >
+            ジョブ一覧を見る →
           </Link>
         </div>
         
