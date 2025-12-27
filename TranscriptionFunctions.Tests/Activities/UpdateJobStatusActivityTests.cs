@@ -27,7 +27,7 @@ public class UpdateJobStatusActivityTests
         var update = new JobStatusUpdate
         {
             JobId = "test-job-123",
-            Status = "Completed",
+            Status = JobStatus.Completed,
             CompletedAt = DateTime.UtcNow
         };
 
@@ -37,12 +37,21 @@ public class UpdateJobStatusActivityTests
     }
 
     [Theory]
-    [InlineData("Completed")]
-    [InlineData("Failed")]
-    [InlineData("PartiallyFailed")]
-    public async Task RunAsync_WithDifferentStatuses_LogsCorrectly(string status)
+    [InlineData(nameof(JobStatus.Completed))]
+    [InlineData(nameof(JobStatus.Failed))]
+    [InlineData(nameof(JobStatus.PartiallyFailed))]
+    public async Task RunAsync_WithDifferentStatuses_LogsCorrectly(string statusName)
     {
         // Arrange
+        // Map the status name to the actual constant value
+        var status = statusName switch
+        {
+            nameof(JobStatus.Completed) => JobStatus.Completed,
+            nameof(JobStatus.Failed) => JobStatus.Failed,
+            nameof(JobStatus.PartiallyFailed) => JobStatus.PartiallyFailed,
+            _ => throw new ArgumentException("Invalid status name", nameof(statusName))
+        };
+
         var update = new JobStatusUpdate
         {
             JobId = "test-job-456",

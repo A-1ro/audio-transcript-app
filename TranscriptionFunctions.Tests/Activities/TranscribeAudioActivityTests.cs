@@ -37,7 +37,7 @@ public class TranscribeAudioActivityTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(input.FileId, result.FileId);
-        Assert.Equal("Completed", result.Status);
+        Assert.Equal(TranscriptionStatus.Completed, result.Status);
         Assert.NotEmpty(result.TranscriptText);
         Assert.True(result.Confidence > 0);
     }

@@ -32,7 +32,7 @@ public class GetJobInfoActivityTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(jobId, result.JobId);
-        Assert.Equal("Processing", result.Status);
+        Assert.Equal(JobStatus.Processing, result.Status);
     }
 
     [Fact]
