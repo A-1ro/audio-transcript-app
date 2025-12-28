@@ -17,12 +17,15 @@ public class TranscribeAudioActivity
     private readonly ILogger<TranscribeAudioActivity> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
 
-    // デフォルトの信頼度スコア（Speech Serviceが詳細な信頼度を提供しない場合）
-    private const double DefaultConfidenceScore = 0.95;
+    // フォールバック用の信頼度スコア（Speech Service Batch APIが詳細な信頼度を提供しない場合にのみ使用）
+    private const double FallbackConfidenceScore = 0.95;
     
     // Azure Speech Serviceの設定をキャッシュ（パフォーマンス向上のため）
     private static Lazy<(string? key, string? region, string language)> _speechServiceConfig =
         CreateSpeechServiceConfig();
+    
+    // ResetSpeechServiceConfigForTestingメソッドのスレッドセーフ性を保証するためのロック
+    private static readonly object _configLock = new object();
 
     /// <summary>
     /// Azure Speech Service 設定用の Lazy インスタンスを作成します。
@@ -37,10 +40,14 @@ public class TranscribeAudioActivity
     /// <summary>
     /// テスト用: キャッシュされた Azure Speech Service 設定をリセットします。
     /// 環境変数を変更した後に呼び出すことで、最新の値を読み込みます。
+    /// スレッドセーフな実装のためロックを使用します。
     /// </summary>
     internal static void ResetSpeechServiceConfigForTesting()
     {
-        _speechServiceConfig = CreateSpeechServiceConfig();
+        lock (_configLock)
+        {
+            _speechServiceConfig = CreateSpeechServiceConfig();
+        }
     }
 
     public TranscribeAudioActivity(
@@ -223,7 +230,7 @@ public class TranscribeAudioActivity
             }
         };
 
-        var content = new StringContent(
+        using var content = new StringContent(
             JsonSerializer.Serialize(requestBody),
             Encoding.UTF8,
             "application/json");
@@ -315,7 +322,7 @@ public class TranscribeAudioActivity
             return (string.Empty, 0.0);
         }
 
-        return (combinedResults.Display ?? string.Empty, DefaultConfidenceScore);
+        return (combinedResults.Display ?? string.Empty, FallbackConfidenceScore);
     }
 
     /// <summary>
