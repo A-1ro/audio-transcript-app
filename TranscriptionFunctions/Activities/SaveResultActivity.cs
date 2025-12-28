@@ -15,9 +15,24 @@ public class SaveResultActivity
     // private readonly CosmosClient _cosmosClient;
     // private readonly BlobServiceClient _blobServiceClient;
 
+    // シミュレーション用の遅延時間
+    private const int CosmosDbSimulationDelayMs = 50;
+    private const int BlobStorageSimulationDelayMs = 30;
+
     public SaveResultActivity(ILogger<SaveResultActivity> logger)
     {
         _logger = logger;
+    }
+
+    /// <summary>
+    /// 冪等性を保証するためのドキュメントIDを生成する
+    /// </summary>
+    /// <param name="jobId">ジョブID</param>
+    /// <param name="fileId">ファイルID</param>
+    /// <returns>ドキュメントID</returns>
+    private static string CreateDocumentId(string jobId, string fileId)
+    {
+        return $"{jobId}_{fileId}";
     }
 
     /// <summary>
@@ -60,7 +75,7 @@ public class SaveResultActivity
         // 2. 既存のドキュメントがある場合は上書き（二重登録を防止）
         
         // 冪等性チェックのシミュレーション
-        var documentId = $"{input.JobId}_{input.FileId}";
+        var documentId = CreateDocumentId(input.JobId, input.FileId);
         _logger.LogInformation(
             "Checking for existing document with id: {DocumentId}",
             documentId);
@@ -70,7 +85,7 @@ public class SaveResultActivity
         //     documentId, 
         //     new PartitionKey(input.JobId));
         
-        await Task.Delay(50); // データベース操作のシミュレーション
+        await Task.Delay(CosmosDbSimulationDelayMs); // データベース操作のシミュレーション
 
         // TODO: Upsert 操作
         // var document = new TranscriptionDocument
@@ -106,7 +121,7 @@ public class SaveResultActivity
             //     BinaryData.FromString(input.RawResult),
             //     overwrite: true);
 
-            await Task.Delay(30); // Blob保存のシミュレーション
+            await Task.Delay(BlobStorageSimulationDelayMs); // Blob保存のシミュレーション
 
             _logger.LogInformation(
                 "Raw result saved to Blob Storage for JobId: {JobId}, FileId: {FileId}",
