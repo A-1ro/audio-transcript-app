@@ -3,14 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #F9FAFB;
+  --foreground: #1F2937;
 }
 
+/* 
+ * The design requested is specifically "Soft Minimal" with off-white background.
+ * keeping dark mode support minimal or mapping it to slightly darker soft colors could be done,
+ * but for now I will focus on the primary requested aesthetic.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #111827; /* Darker charcoal for dark mode if user REALLY wants it, but soft minimal usually implies light */
+    --foreground: #F9FAFB;
   }
 }
 

@@ -213,10 +213,10 @@ export default function UploadForm() {
 
       {/* 状態メッセージ */}
       {isUploading && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-6 p-4 bg-soft-primary/5 border border-soft-primary/20 rounded-xl">
           <div className="flex items-center space-x-3">
             <svg
-              className="animate-spin h-5 w-5 text-blue-600"
+              className="animate-spin h-5 w-5 text-soft-primary"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -235,7 +235,7 @@ export default function UploadForm() {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            <p className="text-blue-800 font-medium">{getStateMessage(state)}</p>
+            <p className="text-soft-primary font-medium">{getStateMessage(state)}</p>
           </div>
         </div>
       )}
@@ -246,22 +246,22 @@ export default function UploadForm() {
           <button
             onClick={handleSubmit}
             disabled={isUploading || validationErrors.length > 0}
-            className={`w-full font-semibold py-4 px-6 rounded-lg transition-colors text-lg ${
+            className={`w-full font-semibold py-4 px-6 rounded-xl transition-all duration-200 text-lg shadow-soft hover:shadow-soft-md transform active:scale-[0.99] ${
               isUploading || validationErrors.length > 0
-                ? "bg-gray-400 cursor-not-allowed text-gray-200"
-                : "bg-blue-600 hover:bg-blue-700 text-white"
+                ? "bg-gray-300 cursor-not-allowed text-gray-100 shadow-none hover:shadow-none"
+                : "bg-soft-primary hover:bg-soft-primaryHover text-white"
             }`}
           >
-            {isUploading ? "処理中..." : "アップロードしてジョブ作成"}
+            {isUploading ? "Processing..." : "Upload and Start Job"}
           </button>
 
           {uploadedFiles.length > 0 && (
             <button
               onClick={handleReset}
               disabled={isUploading}
-              className="w-full bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-700 font-semibold py-3 px-6 rounded-lg transition-colors"
+              className="w-full bg-white border border-soft-border hover:bg-gray-50 disabled:bg-gray-50 disabled:cursor-not-allowed text-soft-text font-semibold py-3 px-6 rounded-xl transition-colors"
             >
-              リセット
+              Reset
             </button>
           )}
         </div>
