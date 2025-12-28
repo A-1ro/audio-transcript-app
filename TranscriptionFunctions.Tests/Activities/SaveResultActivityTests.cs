@@ -163,10 +163,12 @@ public class SaveResultActivityTests
     [InlineData("", "file-1", "text", 0.95, TranscriptionStatus.Completed)]
     [InlineData("job-1", "", "text", 0.95, TranscriptionStatus.Completed)]
     [InlineData("job-1", "file-1", "text", 0.95, "")]
+    [InlineData("job-1", "file-1", "", 0.95, TranscriptionStatus.Completed)]
+    [InlineData("job-1", "file-1", null, 0.95, TranscriptionStatus.Completed)]
     public async Task RunAsync_WithInvalidInput_ThrowsArgumentException(
         string jobId,
         string fileId,
-        string transcriptText,
+        string? transcriptText,
         double confidence,
         string status)
     {

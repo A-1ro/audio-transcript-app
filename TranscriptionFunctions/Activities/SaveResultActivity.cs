@@ -62,6 +62,12 @@ public class SaveResultActivity
             throw new ArgumentException("Status cannot be null or empty", nameof(input));
         }
 
+        // TranscriptTextは成功時には必須
+        if (input.Status == TranscriptionStatus.Completed && string.IsNullOrWhiteSpace(input.TranscriptText))
+        {
+            throw new ArgumentException("TranscriptText cannot be null or empty when Status is Completed", nameof(input));
+        }
+
         _logger.LogInformation(
             "Saving transcription result for JobId: {JobId}, FileId: {FileId}, Status: {Status}",
             input.JobId,
