@@ -248,8 +248,8 @@ export default function UploadForm() {
             disabled={isUploading || validationErrors.length > 0}
             className={`w-full font-semibold py-4 px-6 rounded-xl transition-all duration-200 text-lg shadow-soft hover:shadow-soft-md transform active:scale-[0.99] ${
               isUploading || validationErrors.length > 0
-                ? "bg-gray-300 cursor-not-allowed text-gray-100 shadow-none hover:shadow-none"
-                : "bg-soft-primary hover:bg-soft-primaryHover text-white"
+                ? "bg-gray-300 cursor-not-allowed text-gray-100 shadow-none"
+                : "bg-soft-primary hover:bg-soft-primary-hover text-white"
             }`}
           >
             {isUploading ? "Processing..." : "Upload and Start Job"}
