@@ -92,7 +92,29 @@ public class TranscriptionOrchestrator
             logger.LogInformation("Waiting for transcription results for JobId: {JobId}", jobId);
             var results = await Task.WhenAll(transcriptionTasks);
 
-            // 5. 結果分析と状態決定
+            // 5. 結果保存 - Cosmos DBに永続化
+            logger.LogInformation("Saving transcription results for JobId: {JobId}", jobId);
+            var saveResultTasks = results.Select(result =>
+            {
+                var saveInput = new SaveResultInput
+                {
+                    JobId = jobId,
+                    FileId = result.FileId,
+                    TranscriptText = result.TranscriptText,
+                    Confidence = result.Confidence,
+                    Status = result.Status
+                };
+
+                return context.CallActivityAsync(
+                    nameof(SaveResultActivity),
+                    saveInput,
+                    retryOptions);
+            }).ToList();
+
+            await Task.WhenAll(saveResultTasks);
+            logger.LogInformation("All transcription results saved for JobId: {JobId}", jobId);
+
+            // 6. 結果分析と状態決定
             var successCount = results.Count(r => r.Status == TranscriptionStatus.Completed);
             var failureCount = results.Count(r => r.Status == TranscriptionStatus.Failed);
             var unexpectedCount = results.Count(r => 
@@ -116,7 +138,7 @@ public class TranscriptionOrchestrator
                 unexpectedCount,
                 totalCount);
 
-            // 6. ジョブステータス更新
+            // 7. ジョブステータス更新
             string finalStatus;
             if (failureCount == 0 && unexpectedCount == 0)
             {
