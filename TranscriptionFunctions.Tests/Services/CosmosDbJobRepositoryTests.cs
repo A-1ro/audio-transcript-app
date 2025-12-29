@@ -17,6 +17,7 @@ public class CosmosDbJobRepositoryTests
     private readonly Mock<Container> _mockContainer;
     private readonly Mock<IConfiguration> _mockConfiguration;
     private readonly Mock<ILogger<CosmosDbJobRepository>> _mockLogger;
+    private const string TestETag = "test-etag-123";
 
     public CosmosDbJobRepositoryTests()
     {
@@ -33,6 +34,14 @@ public class CosmosDbJobRepositoryTests
         _mockCosmosClient
             .Setup(c => c.GetContainer(It.IsAny<string>(), It.IsAny<string>()))
             .Returns(_mockContainer.Object);
+    }
+
+    private Mock<ItemResponse<JobDocument>> CreateMockResponse(JobDocument job, string etag = TestETag)
+    {
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(job);
+        mockResponse.Setup(r => r.ETag).Returns(etag);
+        return mockResponse;
     }
 
     [Fact]
@@ -54,8 +63,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = null
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -70,7 +78,7 @@ public class CosmosDbJobRepositoryTests
                 It.IsAny<JobDocument>(),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockResponse.Object);
 
@@ -90,7 +98,7 @@ public class CosmosDbJobRepositoryTests
                     j.StartedAt == startedAt),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -113,8 +121,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = DateTime.UtcNow.AddMinutes(-1)
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -155,8 +162,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = null
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -171,7 +177,7 @@ public class CosmosDbJobRepositoryTests
                 It.IsAny<JobDocument>(),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockResponse.Object);
 
@@ -189,7 +195,7 @@ public class CosmosDbJobRepositoryTests
                 It.Is<JobDocument>(j => j.Status == toStatus),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -215,8 +221,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = DateTime.UtcNow.AddMinutes(-1)
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -253,8 +258,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = null
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -269,7 +273,7 @@ public class CosmosDbJobRepositoryTests
                 It.IsAny<JobDocument>(),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockResponse.Object);
 
@@ -287,7 +291,7 @@ public class CosmosDbJobRepositoryTests
                 It.IsAny<JobDocument>(),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -309,8 +313,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = null
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+        var mockResponse = CreateMockResponse(existingJob);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(
@@ -325,7 +328,7 @@ public class CosmosDbJobRepositoryTests
                 It.IsAny<JobDocument>(),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockResponse.Object);
 
@@ -345,9 +348,172 @@ public class CosmosDbJobRepositoryTests
                     j.FinishedAt == finishedAt),
                 jobId,
                 It.IsAny<PartitionKey>(),
-                null,
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithStartedAtAlreadySet_PreservesOriginalValue()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var originalStartedAt = DateTime.UtcNow.AddMinutes(-10);
+        var newStartedAt = DateTime.UtcNow;
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-15),
+            StartedAt = originalStartedAt, // Already set
+            FinishedAt = null
+        };
+
+        var mockResponse = CreateMockResponse(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act - retry with same status but new timestamp
+        await repository.UpdateJobStatusAsync(jobId, JobStatus.Processing, newStartedAt);
+
+        // Assert - original timestamp should be preserved
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.Is<JobDocument>(j => 
+                    j.Status == JobStatus.Processing && 
+                    j.StartedAt == originalStartedAt), // Original value preserved
+                jobId,
+                It.IsAny<PartitionKey>(),
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithFinishedAtAlreadySet_PreservesOriginalValue()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var originalFinishedAt = DateTime.UtcNow.AddMinutes(-5);
+        var newFinishedAt = DateTime.UtcNow;
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Completed,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-15),
+            StartedAt = DateTime.UtcNow.AddMinutes(-10),
+            FinishedAt = originalFinishedAt // Already set
+        };
+
+        var mockResponse = CreateMockResponse(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act - retry with same status but new timestamp
+        await repository.UpdateJobStatusAsync(jobId, JobStatus.Completed, finishedAt: newFinishedAt);
+
+        // Assert - original timestamp should be preserved
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.Is<JobDocument>(j => 
+                    j.Status == JobStatus.Completed && 
+                    j.FinishedAt == originalFinishedAt), // Original value preserved
+                jobId,
+                It.IsAny<PartitionKey>(),
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithConcurrentUpdate_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = null
+        };
+
+        var mockResponse = CreateMockResponse(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                It.Is<ItemRequestOptions>(opts => opts.IfMatchEtag == TestETag),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Precondition failed", System.Net.HttpStatusCode.PreconditionFailed, 0, "", 0));
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.UpdateJobStatusAsync(jobId, JobStatus.Completed, finishedAt: DateTime.UtcNow));
+
+        Assert.Contains("modified by another process", exception.Message);
     }
 
     [Fact]
@@ -365,8 +531,7 @@ public class CosmosDbJobRepositoryTests
             FinishedAt = null
         };
 
-        var mockResponse = new Mock<ItemResponse<JobDocument>>();
-        mockResponse.Setup(r => r.Resource).Returns(job);
+        var mockResponse = CreateMockResponse(job);
 
         _mockContainer
             .Setup(c => c.ReadItemAsync<JobDocument>(

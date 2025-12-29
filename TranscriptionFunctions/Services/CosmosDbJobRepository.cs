@@ -65,7 +65,7 @@ public class CosmosDbJobRepository : IJobRepository
 
         try
         {
-            // Read the current job document
+            // Read the current job document with ETag for optimistic concurrency
             var response = await _container.ReadItemAsync<JobDocument>(
                 jobId,
                 new PartitionKey(jobId),
@@ -73,6 +73,7 @@ public class CosmosDbJobRepository : IJobRepository
 
             var job = response.Resource;
             var currentStatus = job.Status;
+            var etag = response.ETag;
 
             // Validate state transition
             if (!IsValidTransition(currentStatus, status))
@@ -91,8 +92,8 @@ public class CosmosDbJobRepository : IJobRepository
             // Update job fields
             job.Status = status;
 
-            // Set startedAt when transitioning to Processing
-            if (status == JobStatus.Processing && startedAt.HasValue)
+            // Set startedAt when transitioning to Processing (only if not already set)
+            if (status == JobStatus.Processing && startedAt.HasValue && !job.StartedAt.HasValue)
             {
                 job.StartedAt = startedAt.Value;
                 _logger.LogInformation(
@@ -100,10 +101,17 @@ public class CosmosDbJobRepository : IJobRepository
                     startedAt.Value,
                     jobId);
             }
+            else if (status == JobStatus.Processing && job.StartedAt.HasValue)
+            {
+                _logger.LogInformation(
+                    "StartedAt already set to {StartedAt} for JobId: {JobId}, preserving original value",
+                    job.StartedAt.Value,
+                    jobId);
+            }
 
-            // Set finishedAt when transitioning to final states
+            // Set finishedAt when transitioning to final states (only if not already set)
             if ((status == JobStatus.Completed || status == JobStatus.Failed || status == JobStatus.PartiallyFailed)
-                && finishedAt.HasValue)
+                && finishedAt.HasValue && !job.FinishedAt.HasValue)
             {
                 job.FinishedAt = finishedAt.Value;
                 _logger.LogInformation(
@@ -111,17 +119,40 @@ public class CosmosDbJobRepository : IJobRepository
                     finishedAt.Value,
                     jobId);
             }
+            else if ((status == JobStatus.Completed || status == JobStatus.Failed || status == JobStatus.PartiallyFailed)
+                && job.FinishedAt.HasValue)
+            {
+                _logger.LogInformation(
+                    "FinishedAt already set to {FinishedAt} for JobId: {JobId}, preserving original value",
+                    job.FinishedAt.Value,
+                    jobId);
+            }
 
-            // Replace the document in Cosmos DB
+            // Replace the document in Cosmos DB with optimistic concurrency control using ETag
+            var requestOptions = new ItemRequestOptions
+            {
+                IfMatchEtag = etag
+            };
+
             await _container.ReplaceItemAsync(
                 job,
                 jobId,
                 new PartitionKey(jobId),
-                cancellationToken: cancellationToken);
+                requestOptions,
+                cancellationToken);
 
             _logger.LogInformation(
                 "Job status updated successfully for JobId: {JobId}",
                 jobId);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+        {
+            _logger.LogWarning(
+                ex,
+                "Concurrent update detected for JobId: {JobId}. The job was modified by another process.",
+                jobId);
+            throw new InvalidOperationException(
+                $"Job with ID {jobId} was modified by another process. Please retry the operation.", ex);
         }
         catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {

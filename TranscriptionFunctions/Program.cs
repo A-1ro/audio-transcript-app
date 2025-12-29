@@ -4,6 +4,7 @@ using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using TranscriptionFunctions.Services;
 
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -25,8 +26,12 @@ builder.Services.AddSingleton(serviceProvider =>
     
     if (string.IsNullOrWhiteSpace(connectionString))
     {
-        // Connection string not configured - use a mock/null client for local development
-        // In production, this should throw an exception
+        var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(
+            "CosmosDb:ConnectionString is not configured. Using local emulator connection string. " +
+            "This should only be used for local development.");
+        
+        // Use Cosmos DB emulator connection string for local development
         return new CosmosClient(
             "AccountEndpoint=https://localhost:8081/;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==");
     }
