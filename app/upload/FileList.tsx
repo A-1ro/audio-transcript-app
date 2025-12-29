@@ -24,17 +24,17 @@ export default function FileList({ files, onRemoveFile }: FileListProps) {
             <div className="flex items-center space-x-4 flex-1 min-w-0">
               <div className="h-10 w-10 bg-soft-bg rounded-lg flex items-center justify-center flex-shrink-0">
                 <svg
-                    className="h-6 w-6 text-soft-primary"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                  className="h-6 w-6 text-soft-primary"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                    <path
+                  <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
                     d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                    />
+                  />
                 </svg>
               </div>
               <div className="flex-1 min-w-0">

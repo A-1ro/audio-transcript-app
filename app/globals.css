@@ -5,6 +5,15 @@
 :root {
   --background: #F9FAFB;
   --foreground: #1F2937;
+  
+  /* Soft Minimal Palette */
+  --soft-bg: var(--background);
+  --soft-surface: #FFFFFF;
+  --soft-primary: #3B82F6;
+  --soft-primary-hover: #2563EB;
+  --soft-text: var(--foreground);
+  --soft-subtext: #4B5563;
+  --soft-border: #E5E7EB;
 }
 
 /* 

@@ -13,13 +13,13 @@ const config: Config = {
         foreground: "var(--foreground)",
         // Soft Minimal Palette
         soft: {
-          bg: "#F9FAFB", // Very light gray for background
-          surface: "#FFFFFF", // Pure white for cards
-          primary: "#3B82F6", // Royal Blue
-          primaryHover: "#2563EB",
-          text: "#1F2937", // Charcoal
-          subtext: "#6B7280", // Gray
-          border: "#E5E7EB", // Light gray border
+          bg: "var(--soft-bg)", // Very light gray for background
+          surface: "var(--soft-surface)", // Pure white for cards
+          primary: "var(--soft-primary)", // Royal Blue
+          "primary-hover": "var(--soft-primary-hover)",
+          text: "var(--soft-text)", // Charcoal
+          subtext: "var(--soft-subtext)", // Accessible gray for subtext (higher contrast on soft.bg)
+          border: "var(--soft-border)", // Light gray border
         }
       },
       boxShadow: {

@@ -11,7 +11,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
             href="/upload"
-            className="inline-flex items-center justify-center bg-soft-primary hover:bg-soft-primaryHover text-white font-medium py-3 px-8 rounded-xl shadow-soft transition-all transform hover:-translate-y-0.5"
+            className="inline-flex items-center justify-center bg-soft-primary hover:bg-soft-primary-hover text-white font-medium py-3 px-8 rounded-xl shadow-soft transition-all transform hover:-translate-y-0.5"
           >
             Start Uploading
           </Link>

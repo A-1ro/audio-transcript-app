@@ -16,7 +16,7 @@ export default function UploadPage() {
             href="/jobs"
             className="text-soft-subtext hover:text-soft-primary transition-colors text-sm font-medium flex items-center gap-2"
           >
-             View Jobs <span>→</span>
+            View Jobs <span>→</span>
           </Link>
         </div>
         
