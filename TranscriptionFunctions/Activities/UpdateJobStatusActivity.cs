@@ -2,6 +2,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
 using Microsoft.Extensions.Logging;
 using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Services;
 
 namespace TranscriptionFunctions.Activities;
 
@@ -11,10 +12,14 @@ namespace TranscriptionFunctions.Activities;
 public class UpdateJobStatusActivity
 {
     private readonly ILogger<UpdateJobStatusActivity> _logger;
+    private readonly IJobRepository _jobRepository;
 
-    public UpdateJobStatusActivity(ILogger<UpdateJobStatusActivity> logger)
+    public UpdateJobStatusActivity(
+        ILogger<UpdateJobStatusActivity> logger,
+        IJobRepository jobRepository)
     {
         _logger = logger;
+        _jobRepository = jobRepository;
     }
 
     /// <summary>
@@ -44,9 +49,17 @@ public class UpdateJobStatusActivity
             update.JobId,
             update.Status);
 
-        // TODO: 実際にはCosmosDBのジョブステータスを更新
-        // 今回はログのみ
-        await Task.Delay(100); // 非同期処理のシミュレーション
+        // Support backward compatibility with CompletedAt
+#pragma warning disable CS0618 // Type or member is obsolete
+        var finishedAt = update.FinishedAt ?? update.CompletedAt;
+#pragma warning restore CS0618 // Type or member is obsolete
+
+        // Update job status in Cosmos DB
+        await _jobRepository.UpdateJobStatusAsync(
+            update.JobId,
+            update.Status,
+            update.StartedAt,
+            finishedAt);
 
         _logger.LogInformation(
             "Job status updated for JobId: {JobId}",

@@ -1,0 +1,418 @@
+using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Moq;
+using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Services;
+using Xunit;
+
+namespace TranscriptionFunctions.Tests.Services;
+
+/// <summary>
+/// CosmosDbJobRepositoryのテスト
+/// </summary>
+public class CosmosDbJobRepositoryTests
+{
+    private readonly Mock<CosmosClient> _mockCosmosClient;
+    private readonly Mock<Container> _mockContainer;
+    private readonly Mock<IConfiguration> _mockConfiguration;
+    private readonly Mock<ILogger<CosmosDbJobRepository>> _mockLogger;
+
+    public CosmosDbJobRepositoryTests()
+    {
+        _mockCosmosClient = new Mock<CosmosClient>();
+        _mockContainer = new Mock<Container>();
+        _mockConfiguration = new Mock<IConfiguration>();
+        _mockLogger = new Mock<ILogger<CosmosDbJobRepository>>();
+
+        // Setup configuration
+        _mockConfiguration.Setup(c => c["CosmosDb:DatabaseName"]).Returns("TranscriptionDb");
+        _mockConfiguration.Setup(c => c["CosmosDb:JobsContainerName"]).Returns("Jobs");
+
+        // Setup cosmos client to return mock container
+        _mockCosmosClient
+            .Setup(c => c.GetContainer(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(_mockContainer.Object);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithValidTransition_UpdatesSuccessfully()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var currentStatus = JobStatus.Pending;
+        var newStatus = JobStatus.Processing;
+        var startedAt = DateTime.UtcNow;
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = currentStatus,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = null,
+            FinishedAt = null
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        await repository.UpdateJobStatusAsync(jobId, newStatus, startedAt);
+
+        // Assert
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.Is<JobDocument>(j => 
+                    j.Status == newStatus && 
+                    j.StartedAt == startedAt),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithInvalidTransition_ThrowsException()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var currentStatus = JobStatus.Completed;
+        var newStatus = JobStatus.Processing; // Invalid: can't go from Completed to Processing
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = currentStatus,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.UpdateJobStatusAsync(jobId, newStatus));
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Pending, JobStatus.Processing)]
+    [InlineData(JobStatus.Pending, JobStatus.Failed)]
+    [InlineData(JobStatus.Processing, JobStatus.Completed)]
+    [InlineData(JobStatus.Processing, JobStatus.Failed)]
+    [InlineData(JobStatus.Processing, JobStatus.PartiallyFailed)]
+    public async Task UpdateJobStatusAsync_WithValidTransitions_Succeeds(string fromStatus, string toStatus)
+    {
+        // Arrange
+        var jobId = "test-job-123";
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = fromStatus,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = null,
+            FinishedAt = null
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act - should not throw
+        await repository.UpdateJobStatusAsync(jobId, toStatus);
+
+        // Assert
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.Is<JobDocument>(j => j.Status == toStatus),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Completed, JobStatus.Pending)]
+    [InlineData(JobStatus.Completed, JobStatus.Processing)]
+    [InlineData(JobStatus.Failed, JobStatus.Pending)]
+    [InlineData(JobStatus.Failed, JobStatus.Processing)]
+    [InlineData(JobStatus.PartiallyFailed, JobStatus.Pending)]
+    public async Task UpdateJobStatusAsync_WithInvalidTransitions_ThrowsException(string fromStatus, string toStatus)
+    {
+        // Arrange
+        var jobId = "test-job-123";
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = fromStatus,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.UpdateJobStatusAsync(jobId, toStatus));
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithSameStatus_AllowsIdempotency()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var status = JobStatus.Processing;
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = status,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = null
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act - should not throw (idempotency)
+        await repository.UpdateJobStatusAsync(jobId, status);
+
+        // Assert
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobStatusAsync_WithFinishedStatus_SetsFinishedAt()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var finishedAt = DateTime.UtcNow;
+
+        var existingJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = null
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(existingJob);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.ReplaceItemAsync(
+                It.IsAny<JobDocument>(),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        await repository.UpdateJobStatusAsync(jobId, JobStatus.Completed, finishedAt: finishedAt);
+
+        // Assert
+        _mockContainer.Verify(
+            c => c.ReplaceItemAsync(
+                It.Is<JobDocument>(j => 
+                    j.Status == JobStatus.Completed && 
+                    j.FinishedAt == finishedAt),
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetJobAsync_WithExistingJob_ReturnsJob()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var job = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            StartedAt = DateTime.UtcNow.AddMinutes(-4),
+            FinishedAt = null
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(job);
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.GetJobAsync(jobId);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(jobId, result.JobId);
+        Assert.Equal(JobStatus.Processing, result.Status);
+    }
+
+    [Fact]
+    public async Task GetJobAsync_WithNonExistingJob_ReturnsNull()
+    {
+        // Arrange
+        var jobId = "non-existing-job";
+
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<JobDocument>(
+                jobId,
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Not Found", System.Net.HttpStatusCode.NotFound, 0, "", 0));
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.GetJobAsync(jobId);
+
+        // Assert
+        Assert.Null(result);
+    }
+}

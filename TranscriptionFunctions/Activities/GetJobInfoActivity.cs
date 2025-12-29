@@ -39,7 +39,10 @@ public class GetJobInfoActivity
         var jobInfo = new JobInfo
         {
             JobId = jobId,
-            Status = JobStatus.Processing
+            Status = JobStatus.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5), // Mock created time
+            StartedAt = null,
+            FinishedAt = null
         };
 
         _logger.LogInformation("Job info retrieved for JobId: {JobId}", jobId);

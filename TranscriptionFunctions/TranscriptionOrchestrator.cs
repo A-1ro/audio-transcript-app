@@ -35,6 +35,17 @@ public class TranscriptionOrchestrator
 
         try
         {
+            // 0. ジョブステータスをProcessingに更新
+            logger.LogInformation("Updating job status to Processing for JobId: {JobId}", jobId);
+            await context.CallActivityAsync(
+                nameof(UpdateJobStatusActivity),
+                new JobStatusUpdate
+                {
+                    JobId = jobId,
+                    Status = JobStatus.Processing,
+                    StartedAt = context.CurrentUtcDateTime
+                },
+                retryOptions);
 
             // 1. ジョブ情報取得
             // NOTE: 現在のオーケストレーターではjobInfoは使用していませんが、
@@ -63,7 +74,7 @@ public class TranscriptionOrchestrator
                     {
                         JobId = jobId,
                         Status = JobStatus.Failed,
-                        CompletedAt = context.CurrentUtcDateTime
+                        FinishedAt = context.CurrentUtcDateTime
                     },
                     retryOptions);
 
@@ -162,7 +173,7 @@ public class TranscriptionOrchestrator
                 {
                     JobId = jobId,
                     Status = finalStatus,
-                    CompletedAt = context.CurrentUtcDateTime
+                    FinishedAt = context.CurrentUtcDateTime
                 },
                 retryOptions);
 
@@ -189,7 +200,7 @@ public class TranscriptionOrchestrator
                     {
                         JobId = jobId,
                         Status = JobStatus.Failed,
-                        CompletedAt = context.CurrentUtcDateTime
+                        FinishedAt = context.CurrentUtcDateTime
                     },
                     retryOptions);
             }
