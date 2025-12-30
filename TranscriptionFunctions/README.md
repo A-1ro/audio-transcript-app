@@ -22,12 +22,68 @@ Azure Functions プロジェクト（.NET 8 Isolated）
 
 - **役割**: ジョブ単位の処理全体を制御（Durable Functions Orchestrator）
 - **入力**: JobId
-- **処理**（予定）:
+- **処理**:
   - ジョブ情報取得
   - 音声ファイル一覧取得
   - Activity fan-out（並列文字起こし）
-  - 結果集約
+  - 結果集約（fan-in）
   - 状態更新
+
+## 並列処理制御
+
+### 並列実行数の制御
+
+音声ファイルの文字起こし処理は、以下の2段階で並列実行数を制御できます：
+
+#### 1. host.json による Activity Function レベルの制御
+
+`host.json` の `extensions.durableTask.maxConcurrentActivityFunctions` で、
+ホストインスタンス単位での同時実行可能なActivity関数数を制限します。
+
+```json
+{
+  "extensions": {
+    "durableTask": {
+      "maxConcurrentActivityFunctions": 10
+    }
+  }
+}
+```
+
+- **デフォルト値**: 10
+- **推奨値**: 実行環境のリソース（CPU、メモリ）に応じて調整
+- **影響範囲**: Functions ホスト全体
+
+#### 2. 環境変数によるオーケストレーターレベルの制御
+
+環境変数 `Transcription:MaxParallelFiles` で、1つのジョブ内で同時に処理する
+音声ファイル数を制限します。
+
+```json
+{
+  "Values": {
+    "Transcription:MaxParallelFiles": "5"
+  }
+}
+```
+
+- **デフォルト値**: 5
+- **推奨値**: ジョブあたりの適切な並列数（外部APIのレート制限を考慮）
+- **影響範囲**: 各ジョブ（オーケストレーション）ごと
+
+### 並列処理の動作
+
+オーケストレーターは、音声ファイルをバッチに分割して処理します：
+
+1. 全ファイルを `MaxParallelFiles` のサイズのバッチに分割
+2. 各バッチ内のファイルを並列実行（fan-out）
+3. バッチの完了を待機（fan-in）
+4. 次のバッチを処理
+
+**例**: 12ファイル、MaxParallelFiles=5の場合
+- バッチ1: 5ファイル並列実行
+- バッチ2: 5ファイル並列実行
+- バッチ3: 2ファイル並列実行
 
 ## 必要な依存関係
 
