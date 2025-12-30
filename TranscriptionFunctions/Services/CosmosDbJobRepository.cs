@@ -23,6 +23,14 @@ public class CosmosDbJobRepository : IJobRepository
         [JobStatus.PartiallyFailed] = new HashSet<string>()
     };
 
+    // Terminal status values
+    private static readonly HashSet<string> TerminalStatuses = new()
+    {
+        JobStatus.Completed,
+        JobStatus.Failed,
+        JobStatus.PartiallyFailed
+    };
+
     public CosmosDbJobRepository(
         CosmosClient cosmosClient,
         IConfiguration configuration,
@@ -41,6 +49,22 @@ public class CosmosDbJobRepository : IJobRepository
             containerName);
     }
 
+    /// <summary>
+    /// Update job status and timestamps
+    /// </summary>
+    /// <param name="jobId">Job ID</param>
+    /// <param name="status">New status</param>
+    /// <param name="startedAt">Started timestamp (optional)</param>
+    /// <param name="finishedAt">Finished timestamp (optional)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <remarks>
+    /// This method performs a read-modify-write operation which requires two round trips to Cosmos DB.
+    /// Performance implications:
+    /// - 1 RU for the read operation (point read)
+    /// - Varies for the write operation based on document size (typically 5-15 RUs)
+    /// - Uses optimistic concurrency control with ETags to prevent lost updates
+    /// - In high-throughput scenarios, consider the RU cost and potential retry overhead
+    /// </remarks>
     public async Task UpdateJobStatusAsync(
         string jobId,
         string status,
@@ -110,8 +134,7 @@ public class CosmosDbJobRepository : IJobRepository
             }
 
             // Set finishedAt when transitioning to final states (only if not already set)
-            if ((status == JobStatus.Completed || status == JobStatus.Failed || status == JobStatus.PartiallyFailed)
-                && finishedAt.HasValue && !job.FinishedAt.HasValue)
+            if (IsTerminalStatus(status) && finishedAt.HasValue && !job.FinishedAt.HasValue)
             {
                 job.FinishedAt = finishedAt.Value;
                 _logger.LogInformation(
@@ -119,8 +142,7 @@ public class CosmosDbJobRepository : IJobRepository
                     finishedAt.Value,
                     jobId);
             }
-            else if ((status == JobStatus.Completed || status == JobStatus.Failed || status == JobStatus.PartiallyFailed)
-                && job.FinishedAt.HasValue)
+            else if (IsTerminalStatus(status) && job.FinishedAt.HasValue)
             {
                 _logger.LogInformation(
                     "FinishedAt already set to {FinishedAt} for JobId: {JobId}, preserving original value",
@@ -172,6 +194,17 @@ public class CosmosDbJobRepository : IJobRepository
         }
     }
 
+    /// <summary>
+    /// Get job by ID
+    /// </summary>
+    /// <param name="jobId">Job ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Job document or null if not found</returns>
+    /// <remarks>
+    /// This method returns null when a job is not found, whereas UpdateJobStatusAsync throws InvalidOperationException.
+    /// This is intentional: GetJobAsync is used for queries where a missing job is a valid scenario,
+    /// while UpdateJobStatusAsync expects the job to exist and treats missing jobs as an error condition.
+    /// </remarks>
     public async Task<JobDocument?> GetJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -216,5 +249,13 @@ public class CosmosDbJobRepository : IJobRepository
 
         // Unknown current status - reject transition
         return false;
+    }
+
+    /// <summary>
+    /// Checks if a status is a terminal status (Completed, Failed, or PartiallyFailed)
+    /// </summary>
+    private static bool IsTerminalStatus(string status)
+    {
+        return TerminalStatuses.Contains(status);
     }
 }

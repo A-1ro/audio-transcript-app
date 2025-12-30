@@ -19,21 +19,39 @@ builder.Services
 builder.Services.AddHttpClient();
 
 // Cosmos DB Client の登録
-builder.Services.AddSingleton(serviceProvider =>
+builder.Services.AddSingleton<CosmosClient>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var hostEnvironment = serviceProvider.GetRequiredService<IHostEnvironment>();
     var connectionString = configuration["CosmosDb:ConnectionString"];
     
     if (string.IsNullOrWhiteSpace(connectionString))
     {
-        var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogWarning(
-            "CosmosDb:ConnectionString is not configured. Using local emulator connection string. " +
-            "This should only be used for local development.");
+        // Only allow fallback to emulator in Development environment
+        if (hostEnvironment.IsDevelopment())
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(
+                "CosmosDb:ConnectionString is not configured. Using local Cosmos DB emulator. " +
+                "This is only allowed in Development environment.");
+            
+            // Use local Cosmos DB emulator endpoint (key should be configured in local.settings.json)
+            var emulatorEndpoint = configuration["CosmosDb:EmulatorEndpoint"] ?? "https://localhost:8081";
+            var emulatorKey = configuration["CosmosDb:EmulatorKey"];
+            
+            if (string.IsNullOrWhiteSpace(emulatorKey))
+            {
+                throw new InvalidOperationException(
+                    "CosmosDb:EmulatorKey must be configured in local.settings.json for local development. " +
+                    "Never hardcode credentials in source code.");
+            }
+            
+            return new CosmosClient(emulatorEndpoint, emulatorKey);
+        }
         
-        // Use Cosmos DB emulator connection string for local development
-        return new CosmosClient(
-            "AccountEndpoint=https://localhost:8081/;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==");
+        throw new InvalidOperationException(
+            "CosmosDb:ConnectionString is required but not configured. " +
+            "Please set the connection string in application settings.");
     }
     
     return new CosmosClient(connectionString);
