@@ -89,11 +89,11 @@ public class TranscriptionOrchestrator
 
             logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
 
-            // 並列実行数の取得（環境変数から取得、設定がない場合はデフォルト値を使用）
-            var maxParallelFilesStr = Environment.GetEnvironmentVariable("Transcription:MaxParallelFiles");
-            var maxParallelFiles = int.TryParse(maxParallelFilesStr, out var parsed) && parsed > 0
-                ? parsed
-                : DefaultMaxParallelFiles;
+            // 並列実行数の取得（デフォルト値を使用）
+            // NOTE: オーケストレーターの決定性を保つため、環境変数ではなく定数を使用
+            // 設定変更が必要な場合は、オーケストレーターの入力パラメータとして渡すか、
+            // Activity関数経由で取得する必要があります
+            var maxParallelFiles = DefaultMaxParallelFiles;
 
             logger.LogInformation(
                 "Processing {TotalCount} files with max {MaxParallel} parallel executions for JobId: {JobId}",
