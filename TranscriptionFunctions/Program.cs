@@ -60,4 +60,7 @@ builder.Services.AddSingleton<CosmosClient>(serviceProvider =>
 // Job Repository の登録
 builder.Services.AddSingleton<IJobRepository, CosmosDbJobRepository>();
 
+// Transcription Repository の登録
+builder.Services.AddSingleton<ITranscriptionRepository, CosmosDbTranscriptionRepository>();
+
 builder.Build().Run();

@@ -120,7 +120,7 @@ public class TranscriptionOrchestrator
                     batch.Count,
                     jobId);
 
-                var transcriptionTasks = batch.Select(audioFile =>
+                var transcriptionTasks = batch.Select(async audioFile =>
                 {
                     var input = new TranscriptionInput
                     {
@@ -129,7 +129,28 @@ public class TranscriptionOrchestrator
                         BlobUrl = audioFile.BlobUrl
                     };
 
-                    return context.CallActivityAsync<TranscriptionResult>(
+                    // 冪等性: 既存の結果をチェック
+                    var existingResult = await context.CallActivityAsync<TranscriptionResult?>(
+                        nameof(CheckExistingResultActivity),
+                        input,
+                        retryOptions);
+
+                    if (existingResult != null)
+                    {
+                        logger.LogInformation(
+                            "Using existing transcription result for JobId: {JobId}, FileId: {FileId}",
+                            jobId,
+                            audioFile.FileId);
+                        return existingResult;
+                    }
+
+                    // 既存結果がない場合のみ新規文字起こしを実行
+                    logger.LogInformation(
+                        "No existing result found, transcribing audio for JobId: {JobId}, FileId: {FileId}",
+                        jobId,
+                        audioFile.FileId);
+
+                    return await context.CallActivityAsync<TranscriptionResult>(
                         nameof(TranscribeAudioActivity),
                         input,
                         retryOptions);

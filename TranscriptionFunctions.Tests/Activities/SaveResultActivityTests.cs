@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using TranscriptionFunctions.Activities;
 using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Services;
 using Xunit;
 
 namespace TranscriptionFunctions.Tests.Activities;
@@ -12,12 +13,14 @@ namespace TranscriptionFunctions.Tests.Activities;
 public class SaveResultActivityTests
 {
     private readonly Mock<ILogger<SaveResultActivity>> _mockLogger;
+    private readonly Mock<ITranscriptionRepository> _mockRepository;
     private readonly SaveResultActivity _activity;
 
     public SaveResultActivityTests()
     {
         _mockLogger = new Mock<ILogger<SaveResultActivity>>();
-        _activity = new SaveResultActivity(_mockLogger.Object);
+        _mockRepository = new Mock<ITranscriptionRepository>();
+        _activity = new SaveResultActivity(_mockLogger.Object, _mockRepository.Object);
     }
 
     [Fact]
@@ -33,6 +36,28 @@ public class SaveResultActivityTests
             Status = TranscriptionStatus.Completed
         };
 
+        var savedDocument = new TranscriptionDocument
+        {
+            Id = "test-job-123_file-001",
+            JobId = "test-job-123",
+            FileId = "file-001",
+            TranscriptText = "This is a test transcription",
+            Confidence = 0.95,
+            Status = TranscriptionStatus.Completed,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRepository
+            .Setup(r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedDocument);
+
         // Act
         await _activity.RunAsync(input);
 
@@ -45,6 +70,18 @@ public class SaveResultActivityTests
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Save operation completed")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        // リポジトリが呼ばれたことを確認
+        _mockRepository.Verify(
+            r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -62,27 +99,43 @@ public class SaveResultActivityTests
             RawResult = "{\"raw\":\"data\"}"
         };
 
+        var savedDocument = new TranscriptionDocument
+        {
+            Id = "test-job-123_file-001",
+            JobId = "test-job-123",
+            FileId = "file-001",
+            TranscriptText = "This is a test transcription",
+            Confidence = 0.95,
+            Status = TranscriptionStatus.Completed,
+            RawResult = "{\"raw\":\"data\"}",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRepository
+            .Setup(r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedDocument);
+
         // Act
         await _activity.RunAsync(input);
 
         // Assert
-        // Blob保存のログが記録されることを確認
-        _mockLogger.Verify(
-            logger => logger.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Saving raw result to Blob Storage")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-
-        _mockLogger.Verify(
-            logger => logger.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Raw result saved to Blob Storage")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+        // リポジトリがRawResultを含めて呼ばれたことを確認
+        _mockRepository.Verify(
+            r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -99,19 +152,43 @@ public class SaveResultActivityTests
             Status = TranscriptionStatus.Completed
         };
 
+        var savedDocument = new TranscriptionDocument
+        {
+            Id = "test-job-123_file-001",
+            JobId = "test-job-123",
+            FileId = "file-001",
+            TranscriptText = "This is a test transcription",
+            Confidence = 0.95,
+            Status = TranscriptionStatus.Completed,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRepository
+            .Setup(r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedDocument);
+
         // Act
         await _activity.RunAsync(input);
 
         // Assert
-        // Blob保存のログが記録されないことを確認
-        _mockLogger.Verify(
-            logger => logger.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Saving raw result to Blob Storage")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Never);
+        // リポジトリがnull RawResultで呼ばれたことを確認
+        _mockRepository.Verify(
+            r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Theory]
@@ -134,6 +211,28 @@ public class SaveResultActivityTests
             Confidence = confidence,
             Status = status
         };
+
+        var savedDocument = new TranscriptionDocument
+        {
+            Id = $"{jobId}_{fileId}",
+            JobId = jobId,
+            FileId = fileId,
+            TranscriptText = transcriptText,
+            Confidence = confidence,
+            Status = status,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRepository
+            .Setup(r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedDocument);
 
         // Act
         await _activity.RunAsync(input);
@@ -188,35 +287,6 @@ public class SaveResultActivityTests
     }
 
     [Fact]
-    public async Task RunAsync_IdempotencyCheck_LogsDocumentId()
-    {
-        // Arrange
-        var input = new SaveResultInput
-        {
-            JobId = "test-job-123",
-            FileId = "file-001",
-            TranscriptText = "Test",
-            Confidence = 0.95,
-            Status = TranscriptionStatus.Completed
-        };
-        var expectedDocumentId = "test-job-123_file-001";
-
-        // Act
-        await _activity.RunAsync(input);
-
-        // Assert
-        // ドキュメントIDでの冪等性チェックがログに記録されることを確認
-        _mockLogger.Verify(
-            logger => logger.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains(expectedDocumentId)),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-    }
-
-    [Fact]
     public async Task RunAsync_WithFailedStatus_SavesCorrectly()
     {
         // Arrange
@@ -228,6 +298,28 @@ public class SaveResultActivityTests
             Confidence = 0.0,
             Status = TranscriptionStatus.Failed
         };
+
+        var savedDocument = new TranscriptionDocument
+        {
+            Id = "test-job-123_file-001",
+            JobId = "test-job-123",
+            FileId = "file-001",
+            TranscriptText = "",
+            Confidence = 0.0,
+            Status = TranscriptionStatus.Failed,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRepository
+            .Setup(r => r.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(savedDocument);
 
         // Act
         await _activity.RunAsync(input);
