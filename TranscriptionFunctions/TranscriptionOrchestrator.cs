@@ -14,8 +14,10 @@ namespace TranscriptionFunctions;
 public class TranscriptionOrchestrator
 {
     /// <summary>
-    /// オーケストレーター内での並列実行数のデフォルト値
-    /// この値は環境変数 Transcription:MaxParallelFiles で上書き可能
+    /// オーケストレーター内での並列実行数
+    /// NOTE: オーケストレーターの決定性を保つため、この値は定数として定義されています。
+    /// 動的な設定変更が必要な場合は、オーケストレーターの入力パラメータとして渡すか、
+    /// Activity関数経由で取得する必要があります。
     /// </summary>
     private const int DefaultMaxParallelFiles = 5;
     /// <summary>
