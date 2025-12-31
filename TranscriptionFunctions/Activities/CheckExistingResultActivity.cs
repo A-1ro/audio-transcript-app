@@ -65,6 +65,8 @@ public class CheckExistingResultActivity
                     input.FileId,
                     existingResult.Status);
 
+                // TranscriptText is required by TranscriptionResult, use empty string for null
+                // This is expected behavior for failed transcriptions where TranscriptText may be null
                 return new TranscriptionResult
                 {
                     FileId = existingResult.FileId,

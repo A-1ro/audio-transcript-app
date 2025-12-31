@@ -120,6 +120,10 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
 
         var documentId = CreateDocumentId(jobId, fileId);
 
+        // Note: Using DateTime.UtcNow for CreatedAt. This is acceptable here as:
+        // 1. Cosmos DB also manages its own _ts timestamp field
+        // 2. CreatedAt is informational and doesn't affect business logic
+        // 3. For testability improvements, consider injecting IDateTimeProvider in the future
         var document = new TranscriptionDocument
         {
             Id = documentId,

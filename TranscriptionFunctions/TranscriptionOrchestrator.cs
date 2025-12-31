@@ -120,7 +120,10 @@ public class TranscriptionOrchestrator
                     batch.Count,
                     jobId);
 
-                var transcriptionTasks = batch.Select(async audioFile =>
+                // 各ファイルに対して冪等性チェックと文字起こしタスクを作成
+                var transcriptionTasks = new List<Task<TranscriptionResult>>();
+                
+                foreach (var audioFile in batch)
                 {
                     var input = new TranscriptionInput
                     {
@@ -135,26 +138,32 @@ public class TranscriptionOrchestrator
                         input,
                         retryOptions);
 
+                    Task<TranscriptionResult> transcriptionTask;
                     if (existingResult != null)
                     {
                         logger.LogInformation(
                             "Using existing transcription result for JobId: {JobId}, FileId: {FileId}",
                             jobId,
                             audioFile.FileId);
-                        return existingResult;
+                        // 既存結果をタスクとして返す
+                        transcriptionTask = Task.FromResult(existingResult);
                     }
+                    else
+                    {
+                        // 既存結果がない場合のみ新規文字起こしを実行
+                        logger.LogInformation(
+                            "No existing result found, transcribing audio for JobId: {JobId}, FileId: {FileId}",
+                            jobId,
+                            audioFile.FileId);
 
-                    // 既存結果がない場合のみ新規文字起こしを実行
-                    logger.LogInformation(
-                        "No existing result found, transcribing audio for JobId: {JobId}, FileId: {FileId}",
-                        jobId,
-                        audioFile.FileId);
-
-                    return await context.CallActivityAsync<TranscriptionResult>(
-                        nameof(TranscribeAudioActivity),
-                        input,
-                        retryOptions);
-                }).ToList();
+                        transcriptionTask = context.CallActivityAsync<TranscriptionResult>(
+                            nameof(TranscribeAudioActivity),
+                            input,
+                            retryOptions);
+                    }
+                    
+                    transcriptionTasks.Add(transcriptionTask);
+                }
 
                 // バッチ内の全タスクが完了するまで待機
                 var batchResults = await Task.WhenAll(transcriptionTasks);
