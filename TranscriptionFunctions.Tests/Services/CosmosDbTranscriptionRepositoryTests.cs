@@ -141,7 +141,7 @@ public class CosmosDbTranscriptionRepositoryTests
             .ReturnsAsync(mockResponse.Object);
 
         // Act
-        var result = await _repository.SaveTranscriptionAsync(
+        await _repository.SaveTranscriptionAsync(
             jobId,
             fileId,
             transcriptText,
@@ -156,7 +156,7 @@ public class CosmosDbTranscriptionRepositoryTests
                     d.JobId == jobId &&
                     d.FileId == fileId &&
                     d.TranscriptText == transcriptText &&
-                    d.Confidence == confidence &&
+                    Math.Abs(d.Confidence - confidence) < 0.0001 &&
                     d.Status == status),
                 It.IsAny<PartitionKey>(),
                 It.IsAny<ItemRequestOptions>(),
@@ -210,7 +210,7 @@ public class CosmosDbTranscriptionRepositoryTests
             .ReturnsAsync(mockResponse.Object);
 
         // Act
-        var result = await _repository.SaveTranscriptionAsync(
+        await _repository.SaveTranscriptionAsync(
             jobId,
             fileId,
             transcriptText,

@@ -27,9 +27,12 @@ public class CheckExistingResultActivity
     /// 既存の文字起こし結果をチェックする
     /// </summary>
     /// <param name="input">チェック対象の入力</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
     /// <returns>既存結果が存在する場合はTranscriptionResult、存在しない場合はnull</returns>
     [Function(nameof(CheckExistingResultActivity))]
-    public async Task<TranscriptionResult?> RunAsync([ActivityTrigger] TranscriptionInput input)
+    public async Task<TranscriptionResult?> RunAsync(
+        [ActivityTrigger] TranscriptionInput input,
+        CancellationToken cancellationToken = default)
     {
         if (input == null)
         {
@@ -55,7 +58,8 @@ public class CheckExistingResultActivity
         {
             var existingResult = await _transcriptionRepository.GetTranscriptionAsync(
                 input.JobId,
-                input.FileId);
+                input.FileId,
+                cancellationToken);
 
             if (existingResult != null)
             {
@@ -65,12 +69,22 @@ public class CheckExistingResultActivity
                     input.FileId,
                     existingResult.Status);
 
-                // TranscriptText is required by TranscriptionResult, use empty string for null
-                // This is expected behavior for failed transcriptions where TranscriptText may be null
+                // Handle null TranscriptText appropriately based on status
+                // For completed transcriptions, null should not occur but we normalize to empty string
+                // For failed transcriptions, null is expected and we preserve it as empty string
+                var transcriptText = existingResult.TranscriptText ?? string.Empty;
+                if (existingResult.Status == TranscriptionStatus.Completed && existingResult.TranscriptText == null)
+                {
+                    _logger.LogWarning(
+                        "Completed transcription has null TranscriptText for JobId: {JobId}, FileId: {FileId}. Treating as empty string.",
+                        input.JobId,
+                        input.FileId);
+                }
+
                 return new TranscriptionResult
                 {
                     FileId = existingResult.FileId,
-                    TranscriptText = existingResult.TranscriptText ?? string.Empty,
+                    TranscriptText = transcriptText,
                     Confidence = existingResult.Confidence,
                     Status = existingResult.Status
                 };
@@ -90,7 +104,11 @@ public class CheckExistingResultActivity
                 "Error checking for existing transcription result for JobId: {JobId}, FileId: {FileId}",
                 input.JobId,
                 input.FileId);
-            throw;
+            
+            // Re-throw with additional context to aid debugging
+            throw new InvalidOperationException(
+                $"Failed to check existing transcription result for JobId: {input.JobId}, FileId: {input.FileId}",
+                ex);
         }
     }
 }

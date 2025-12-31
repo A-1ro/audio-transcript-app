@@ -26,8 +26,11 @@ public class SaveResultActivity
     /// 文字起こし結果を永続化する
     /// </summary>
     /// <param name="input">保存する結果情報</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
     [Function(nameof(SaveResultActivity))]
-    public async Task RunAsync([ActivityTrigger] SaveResultInput input)
+    public async Task RunAsync(
+        [ActivityTrigger] SaveResultInput input,
+        CancellationToken cancellationToken = default)
     {
         if (input == null)
         {
@@ -68,7 +71,8 @@ public class SaveResultActivity
             input.TranscriptText,
             input.Confidence,
             input.Status,
-            input.RawResult);
+            input.RawResult,
+            cancellationToken);
 
         _logger.LogInformation(
             "Transcription result saved to Cosmos DB for JobId: {JobId}, FileId: {FileId}",

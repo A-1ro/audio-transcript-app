@@ -121,9 +121,8 @@ public class TranscriptionOrchestrator
                     jobId);
 
                 // 各ファイルに対して冪等性チェックと文字起こしタスクを作成
-                var transcriptionTasks = new List<Task<TranscriptionResult>>();
-                
-                foreach (var audioFile in batch)
+                // 決定性を保つため、まず全ての既存結果チェックタスクを作成
+                var checkTasks = batch.Select(audioFile =>
                 {
                     var input = new TranscriptionInput
                     {
@@ -132,13 +131,22 @@ public class TranscriptionOrchestrator
                         BlobUrl = audioFile.BlobUrl
                     };
 
-                    // 冪等性: 既存の結果をチェック
-                    var existingResult = await context.CallActivityAsync<TranscriptionResult?>(
+                    return context.CallActivityAsync<TranscriptionResult?>(
                         nameof(CheckExistingResultActivity),
                         input,
                         retryOptions);
+                }).ToList();
 
-                    Task<TranscriptionResult> transcriptionTask;
+                // 全てのチェックタスクが完了するまで待機
+                var checkResults = await Task.WhenAll(checkTasks);
+
+                // チェック結果に基づいて文字起こしタスクを作成
+                var transcriptionTasks = new List<Task<TranscriptionResult>>();
+                for (int fileIndex = 0; fileIndex < batch.Count; fileIndex++)
+                {
+                    var audioFile = batch[fileIndex];
+                    var existingResult = checkResults[fileIndex];
+
                     if (existingResult != null)
                     {
                         logger.LogInformation(
@@ -146,7 +154,7 @@ public class TranscriptionOrchestrator
                             jobId,
                             audioFile.FileId);
                         // 既存結果をタスクとして返す
-                        transcriptionTask = Task.FromResult(existingResult);
+                        transcriptionTasks.Add(Task.FromResult(existingResult));
                     }
                     else
                     {
@@ -156,13 +164,18 @@ public class TranscriptionOrchestrator
                             jobId,
                             audioFile.FileId);
 
-                        transcriptionTask = context.CallActivityAsync<TranscriptionResult>(
+                        var input = new TranscriptionInput
+                        {
+                            JobId = jobId,
+                            FileId = audioFile.FileId,
+                            BlobUrl = audioFile.BlobUrl
+                        };
+
+                        transcriptionTasks.Add(context.CallActivityAsync<TranscriptionResult>(
                             nameof(TranscribeAudioActivity),
                             input,
-                            retryOptions);
+                            retryOptions));
                     }
-                    
-                    transcriptionTasks.Add(transcriptionTask);
                 }
 
                 // バッチ内の全タスクが完了するまで待機

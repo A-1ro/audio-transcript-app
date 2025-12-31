@@ -164,7 +164,11 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 "Failed to save transcription result for JobId: {JobId}, FileId: {FileId}",
                 jobId,
                 fileId);
-            throw;
+            
+            // Re-throw with additional context to aid debugging
+            throw new InvalidOperationException(
+                $"Failed to save transcription result for JobId: {jobId}, FileId: {fileId}. Document ID: {documentId}",
+                ex);
         }
     }
 }
