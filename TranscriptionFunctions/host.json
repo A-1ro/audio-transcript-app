@@ -8,5 +8,14 @@
             },
             "enableLiveMetricsFilters": true
         }
+    },
+    "extensions": {
+        "durableTask": {
+            "maxConcurrentActivityFunctions": 10,
+            "storageProvider": {
+                "controlQueueBatchSize": 32,
+                "controlQueueBufferThreshold": 256
+            }
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,13 @@ namespace TranscriptionFunctions;
 /// </summary>
 public class TranscriptionOrchestrator
 {
+    /// <summary>
+    /// オーケストレーター内での並列実行数
+    /// NOTE: オーケストレーターの決定性を保つため、この値は定数として定義されています。
+    /// 動的な設定変更が必要な場合は、オーケストレーターの入力パラメータとして渡すか、
+    /// Activity関数経由で取得する必要があります。
+    /// </summary>
+    private const int DefaultMaxParallelFiles = 5;
     /// <summary>
     /// オーケストレーション本体
     /// </summary>
@@ -83,25 +91,64 @@ public class TranscriptionOrchestrator
 
             logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
 
-            // 3. Activity fan-out - 並列文字起こし実行
-            var transcriptionTasks = audioFiles.Select(audioFile =>
-            {
-                var input = new TranscriptionInput
-                {
-                    JobId = jobId,
-                    FileId = audioFile.FileId,
-                    BlobUrl = audioFile.BlobUrl
-                };
+            // 並列実行数の取得（デフォルト値を使用）
+            // NOTE: オーケストレーターの決定性を保つため、環境変数ではなく定数を使用
+            // 設定変更が必要な場合は、オーケストレーターの入力パラメータとして渡すか、
+            // Activity関数経由で取得する必要があります
+            var maxParallelFiles = DefaultMaxParallelFiles;
 
-                return context.CallActivityAsync<TranscriptionResult>(
-                    nameof(TranscribeAudioActivity),
-                    input,
-                    retryOptions);
-            }).ToList();
+            logger.LogInformation(
+                "Processing {TotalCount} files with max {MaxParallel} parallel executions for JobId: {JobId}",
+                audioFiles.Count,
+                maxParallelFiles,
+                jobId);
+
+            // 3. Activity fan-out - バッチ処理で並列文字起こし実行
+            var allResults = new List<TranscriptionResult>();
+            
+            // ファイルをバッチに分割して処理
+            for (int i = 0; i < audioFiles.Count; i += maxParallelFiles)
+            {
+                var batch = audioFiles.Skip(i).Take(maxParallelFiles).ToList();
+                var batchNumber = (i / maxParallelFiles) + 1;
+                var totalBatches = (audioFiles.Count + maxParallelFiles - 1) / maxParallelFiles;
+                
+                logger.LogInformation(
+                    "Processing batch {BatchNumber}/{TotalBatches} ({BatchSize} files) for JobId: {JobId}",
+                    batchNumber,
+                    totalBatches,
+                    batch.Count,
+                    jobId);
+
+                var transcriptionTasks = batch.Select(audioFile =>
+                {
+                    var input = new TranscriptionInput
+                    {
+                        JobId = jobId,
+                        FileId = audioFile.FileId,
+                        BlobUrl = audioFile.BlobUrl
+                    };
+
+                    return context.CallActivityAsync<TranscriptionResult>(
+                        nameof(TranscribeAudioActivity),
+                        input,
+                        retryOptions);
+                }).ToList();
+
+                // バッチ内の全タスクが完了するまで待機
+                var batchResults = await Task.WhenAll(transcriptionTasks);
+                allResults.AddRange(batchResults);
+                
+                logger.LogInformation(
+                    "Completed batch {BatchNumber}/{TotalBatches} for JobId: {JobId}",
+                    batchNumber,
+                    totalBatches,
+                    jobId);
+            }
 
             // 4. 結果集約 - fan-in
-            logger.LogInformation("Waiting for transcription results for JobId: {JobId}", jobId);
-            var results = await Task.WhenAll(transcriptionTasks);
+            logger.LogInformation("All transcription batches completed for JobId: {JobId}", jobId);
+            var results = allResults.ToArray();
 
             // 5. 結果保存 - Cosmos DBに永続化
             logger.LogInformation("Saving transcription results for JobId: {JobId}", jobId);
