@@ -318,6 +318,19 @@ public class TranscriptionOrchestrator
                         FinishedAt = context.CurrentUtcDateTime
                     },
                     retryOptions);
+                
+                // 失敗したジョブのテレメトリを記録
+                var jobDuration = context.CurrentUtcDateTime - orchestrationStartTime;
+                await context.CallActivityAsync(
+                    nameof(TrackTelemetryActivity.TrackJobCompletion),
+                    new JobTelemetryInput
+                    {
+                        JobId = jobId,
+                        Duration = jobDuration,
+                        TotalFiles = 0,  // Exception occurred before processing files
+                        SuccessCount = 0,
+                        FailureCount = 0  // Will be counted as job failure
+                    });
             }
             catch (Exception updateEx)
             {
