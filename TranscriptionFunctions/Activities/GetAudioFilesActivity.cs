@@ -30,28 +30,32 @@ public class GetAudioFilesActivity
             throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
         }
 
-        _logger.LogInformation("Getting audio files for JobId: {JobId}", jobId);
-
-        // TODO: 実際にはCosmosDBやBlobStorageから音声ファイル一覧を取得
-        // 今回はモックデータを返す
-        await Task.Delay(100); // 非同期処理のシミュレーション
-
-        var audioFiles = new List<AudioFileInfo>
+        // ログスコープにJobIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = jobId }))
         {
-            new AudioFileInfo
-            {
-                FileId = $"{jobId}-file-001",
-                BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-001.wav"
-            },
-            new AudioFileInfo
-            {
-                FileId = $"{jobId}-file-002",
-                BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-002.wav"
-            }
-        };
+            _logger.LogInformation("Getting audio files for JobId: {JobId}", jobId);
 
-        _logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
+            // TODO: 実際にはCosmosDBやBlobStorageから音声ファイル一覧を取得
+            // 今回はモックデータを返す
+            await Task.Delay(100); // 非同期処理のシミュレーション
 
-        return audioFiles;
+            var audioFiles = new List<AudioFileInfo>
+            {
+                new AudioFileInfo
+                {
+                    FileId = $"{jobId}-file-001",
+                    BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-001.wav"
+                },
+                new AudioFileInfo
+                {
+                    FileId = $"{jobId}-file-002",
+                    BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-002.wav"
+                }
+            };
+
+            _logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
+
+            return audioFiles;
+        }
     }
 }

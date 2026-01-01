@@ -34,6 +34,9 @@ public class TranscriptionOrchestrator
 
         logger.LogInformation("Starting transcription orchestration for JobId: {JobId}", jobId);
 
+        // 開始時刻を記録
+        var orchestrationStartTime = context.CurrentUtcDateTime;
+
         // RetryOptions設定 - 一時的なエラーに対する再試行
         var retryPolicy = new RetryPolicy(
             maxNumberOfAttempts: 3,
@@ -275,6 +278,19 @@ public class TranscriptionOrchestrator
                     FinishedAt = context.CurrentUtcDateTime
                 },
                 retryOptions);
+
+            // ジョブ完了のテレメトリを記録
+            var jobDuration = context.CurrentUtcDateTime - orchestrationStartTime;
+            await context.CallActivityAsync(
+                nameof(TrackTelemetryActivity.TrackJobCompletion),
+                new JobTelemetryInput
+                {
+                    JobId = jobId,
+                    Duration = jobDuration,
+                    TotalFiles = totalCount,
+                    SuccessCount = successCount,
+                    FailureCount = failureCount
+                });
 
             logger.LogInformation(
                 "Transcription orchestration completed for JobId: {JobId} with status: {Status}",

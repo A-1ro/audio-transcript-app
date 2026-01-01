@@ -39,15 +39,19 @@ public class JobQueueTrigger
                 throw new ArgumentException("JobId cannot be empty", nameof(queueMessage));
             }
 
-            // TranscriptionOrchestratorを起動
-            var instanceId = await client.ScheduleNewOrchestrationInstanceAsync(
-                nameof(TranscriptionOrchestrator),
-                jobId);
+            // ログスコープにJobIdを追加
+            using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = jobId }))
+            {
+                // TranscriptionOrchestratorを起動
+                var instanceId = await client.ScheduleNewOrchestrationInstanceAsync(
+                    nameof(TranscriptionOrchestrator),
+                    jobId);
 
-            _logger.LogInformation(
-                "Started orchestration with ID = '{InstanceId}' for JobId = '{JobId}'",
-                instanceId,
-                jobId);
+                _logger.LogInformation(
+                    "Started orchestration with ID = '{InstanceId}' for JobId = '{JobId}'",
+                    instanceId,
+                    jobId);
+            }
         }
         catch (Exception ex)
         {
