@@ -36,11 +36,24 @@ public class GetJobsHttpTrigger
 
         try
         {
-            // Get maxItems from query parameter (default: 100)
+            // Get maxItems from query parameter (default: 100, max: 1000)
             var maxItems = 100;
             if (req.Query["maxItems"] is string maxItemsStr && int.TryParse(maxItemsStr, out var parsedMaxItems))
             {
                 maxItems = parsedMaxItems;
+            }
+
+            // Validate maxItems to prevent abuse
+            if (maxItems < 1 || maxItems > 1000)
+            {
+                var validationResponse = req.CreateResponse(HttpStatusCode.BadRequest);
+                validationResponse.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await validationResponse.WriteStringAsync(JsonSerializer.Serialize(new
+                {
+                    error = "Invalid maxItems parameter",
+                    message = "maxItems must be between 1 and 1000"
+                }));
+                return validationResponse;
             }
 
             // Fetch jobs from repository

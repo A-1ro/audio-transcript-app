@@ -277,7 +277,8 @@ public class CosmosDbJobRepository : IJobRepository
         try
         {
             // Query all documents ordered by createdAt descending
-            var query = new QueryDefinition("SELECT * FROM c ORDER BY c.createdAt DESC");
+            // Select only required fields to optimize data transfer and query performance
+            var query = new QueryDefinition("SELECT c.id, c.jobId, c.status, c.createdAt FROM c ORDER BY c.createdAt DESC");
             
             var queryRequestOptions = new QueryRequestOptions
             {

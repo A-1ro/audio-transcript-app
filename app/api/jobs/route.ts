@@ -18,9 +18,6 @@ export async function GET() {
     // Call the Azure Function to get jobs
     const response = await fetch(`${functionsUrl}/api/jobs`, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
     });
 
     if (!response.ok) {
