@@ -92,65 +92,81 @@ public class TranscribeAudioActivity
             throw new ArgumentException($"BlobUrl is not a valid URI: {input.BlobUrl}", nameof(input));
         }
 
-        _logger.LogInformation(
-            "Transcribing audio for JobId: {JobId}, FileId: {FileId}",
-            input.JobId,
-            input.FileId);
-
-        try
+        // ログスコープにJobIdとFileIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object>
         {
-            // Azure Speech Serviceの設定をキャッシュから取得
-            var (speechKey, speechRegion, recognitionLanguage) = _speechServiceConfig.Value;
-
-            if (string.IsNullOrWhiteSpace(speechKey) || string.IsNullOrWhiteSpace(speechRegion))
-            {
-                var errorMessage = "Azure Speech Service credentials not configured. " +
-                    $"Set AzureSpeechServiceKey and AzureSpeechServiceRegion environment variables for JobId: {input.JobId}, FileId: {input.FileId}";
-                _logger.LogError(errorMessage);
-                throw new InvalidOperationException(errorMessage);
-            }
-
-            // Azure Speech Service Batch Transcription APIで文字起こし
-            var (transcriptText, confidence) = await TranscribeWithBatchApiAsync(
-                speechKey,
-                speechRegion,
-                recognitionLanguage,
-                input.BlobUrl,
-                input.JobId,
-                input.FileId);
-
+            ["JobId"] = input.JobId,
+            ["FileId"] = input.FileId
+        }))
+        {
             _logger.LogInformation(
-                "Transcription completed for JobId: {JobId}, FileId: {FileId}, Confidence: {Confidence}",
-                input.JobId,
-                input.FileId,
-                confidence);
-
-            return new TranscriptionResult
-            {
-                FileId = input.FileId,
-                TranscriptText = transcriptText,
-                Confidence = confidence,
-                Status = TranscriptionStatus.Completed,
-                IsExistingResult = false  // New transcription result
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Transcription failed for JobId: {JobId}, FileId: {FileId}",
+                "Transcribing audio for JobId: {JobId}, FileId: {FileId}",
                 input.JobId,
                 input.FileId);
 
-            // 失敗時の結果を返す
-            return new TranscriptionResult
+            var startTime = DateTime.UtcNow;
+
+            try
             {
-                FileId = input.FileId,
-                TranscriptText = string.Empty,
-                Confidence = 0.0,
-                Status = TranscriptionStatus.Failed,
-                IsExistingResult = false  // New transcription result
-            };
+                // Azure Speech Serviceの設定をキャッシュから取得
+                var (speechKey, speechRegion, recognitionLanguage) = _speechServiceConfig.Value;
+
+                if (string.IsNullOrWhiteSpace(speechKey) || string.IsNullOrWhiteSpace(speechRegion))
+                {
+                    var errorMessage = "Azure Speech Service credentials not configured. " +
+                        $"Set AzureSpeechServiceKey and AzureSpeechServiceRegion environment variables for JobId: {input.JobId}, FileId: {input.FileId}";
+                    _logger.LogError(errorMessage);
+                    throw new InvalidOperationException(errorMessage);
+                }
+
+                // Azure Speech Service Batch Transcription APIで文字起こし
+                var (transcriptText, confidence) = await TranscribeWithBatchApiAsync(
+                    speechKey,
+                    speechRegion,
+                    recognitionLanguage,
+                    input.BlobUrl,
+                    input.JobId,
+                    input.FileId);
+
+                var duration = DateTime.UtcNow - startTime;
+
+                _logger.LogInformation(
+                    "Transcription completed for JobId: {JobId}, FileId: {FileId}, Confidence: {Confidence}, Duration: {Duration}ms",
+                    input.JobId,
+                    input.FileId,
+                    confidence,
+                    duration.TotalMilliseconds);
+
+                return new TranscriptionResult
+                {
+                    FileId = input.FileId,
+                    TranscriptText = transcriptText,
+                    Confidence = confidence,
+                    Status = TranscriptionStatus.Completed,
+                    IsExistingResult = false  // New transcription result
+                };
+            }
+            catch (Exception ex)
+            {
+                var duration = DateTime.UtcNow - startTime;
+
+                _logger.LogError(
+                    ex,
+                    "Transcription failed for JobId: {JobId}, FileId: {FileId}, Duration: {Duration}ms",
+                    input.JobId,
+                    input.FileId,
+                    duration.TotalMilliseconds);
+
+                // 失敗時の結果を返す
+                return new TranscriptionResult
+                {
+                    FileId = input.FileId,
+                    TranscriptText = string.Empty,
+                    Confidence = 0.0,
+                    Status = TranscriptionStatus.Failed,
+                    IsExistingResult = false  // New transcription result
+                };
+            }
         }
     }
 

@@ -44,25 +44,29 @@ public class UpdateJobStatusActivity
             throw new ArgumentException("Status cannot be null or empty", nameof(update));
         }
 
-        _logger.LogInformation(
-            "Updating job status for JobId: {JobId} to {Status}",
-            update.JobId,
-            update.Status);
+        // ログスコープにJobIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = update.JobId }))
+        {
+            _logger.LogInformation(
+                "Updating job status for JobId: {JobId} to {Status}",
+                update.JobId,
+                update.Status);
 
-        // Support backward compatibility with CompletedAt
+            // Support backward compatibility with CompletedAt
 #pragma warning disable CS0618 // Type or member is obsolete
-        var finishedAt = update.FinishedAt ?? update.CompletedAt;
+            var finishedAt = update.FinishedAt ?? update.CompletedAt;
 #pragma warning restore CS0618 // Type or member is obsolete
 
-        // Update job status in Cosmos DB
-        await _jobRepository.UpdateJobStatusAsync(
-            update.JobId,
-            update.Status,
-            update.StartedAt,
-            finishedAt);
+            // Update job status in Cosmos DB
+            await _jobRepository.UpdateJobStatusAsync(
+                update.JobId,
+                update.Status,
+                update.StartedAt,
+                finishedAt);
 
-        _logger.LogInformation(
-            "Job status updated for JobId: {JobId}",
-            update.JobId);
+            _logger.LogInformation(
+                "Job status updated for JobId: {JobId}",
+                update.JobId);
+        }
     }
 }

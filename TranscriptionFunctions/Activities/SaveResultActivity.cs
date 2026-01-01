@@ -58,30 +58,38 @@ public class SaveResultActivity
             throw new ArgumentException("TranscriptText cannot be null or empty when Status is Completed", nameof(input));
         }
 
-        _logger.LogInformation(
-            "Saving transcription result for JobId: {JobId}, FileId: {FileId}, Status: {Status}",
-            input.JobId,
-            input.FileId,
-            input.Status);
+        // ログスコープにJobIdとFileIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object>
+        {
+            ["JobId"] = input.JobId,
+            ["FileId"] = input.FileId
+        }))
+        {
+            _logger.LogInformation(
+                "Saving transcription result for JobId: {JobId}, FileId: {FileId}, Status: {Status}",
+                input.JobId,
+                input.FileId,
+                input.Status);
 
-        // Cosmos DB に保存（Upsert操作により冪等性を保証）
-        await _transcriptionRepository.SaveTranscriptionAsync(
-            input.JobId,
-            input.FileId,
-            input.TranscriptText,
-            input.Confidence,
-            input.Status,
-            input.RawResult,
-            cancellationToken);
+            // Cosmos DB に保存（Upsert操作により冪等性を保証）
+            await _transcriptionRepository.SaveTranscriptionAsync(
+                input.JobId,
+                input.FileId,
+                input.TranscriptText,
+                input.Confidence,
+                input.Status,
+                input.RawResult,
+                cancellationToken);
 
-        _logger.LogInformation(
-            "Transcription result saved to Cosmos DB for JobId: {JobId}, FileId: {FileId}",
-            input.JobId,
-            input.FileId);
+            _logger.LogInformation(
+                "Transcription result saved to Cosmos DB for JobId: {JobId}, FileId: {FileId}",
+                input.JobId,
+                input.FileId);
 
-        _logger.LogInformation(
-            "Save operation completed for JobId: {JobId}, FileId: {FileId}",
-            input.JobId,
-            input.FileId);
+            _logger.LogInformation(
+                "Save operation completed for JobId: {JobId}, FileId: {FileId}",
+                input.JobId,
+                input.FileId);
+        }
     }
 }

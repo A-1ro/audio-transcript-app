@@ -49,69 +49,77 @@ public class CheckExistingResultActivity
             throw new ArgumentException("FileId cannot be null or empty", nameof(input));
         }
 
-        _logger.LogInformation(
-            "Checking for existing transcription result for JobId: {JobId}, FileId: {FileId}",
-            input.JobId,
-            input.FileId);
-
-        try
+        // ログスコープにJobIdとFileIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object>
         {
-            var existingResult = await _transcriptionRepository.GetTranscriptionAsync(
+            ["JobId"] = input.JobId,
+            ["FileId"] = input.FileId
+        }))
+        {
+            _logger.LogInformation(
+                "Checking for existing transcription result for JobId: {JobId}, FileId: {FileId}",
                 input.JobId,
-                input.FileId,
-                cancellationToken);
+                input.FileId);
 
-            if (existingResult != null)
+            try
             {
-                _logger.LogInformation(
-                    "Found existing transcription result for JobId: {JobId}, FileId: {FileId}, Status: {Status}",
+                var existingResult = await _transcriptionRepository.GetTranscriptionAsync(
                     input.JobId,
                     input.FileId,
-                    existingResult.Status);
+                    cancellationToken);
 
-                // Handle null TranscriptText appropriately based on status
-                // Note: TranscriptionDocument (DB entity) allows nullable TranscriptText, but TranscriptionResult
-                // has TranscriptText marked as required (non-null). We normalize null from the DB to empty string
-                // here to safely bridge that schema/model mismatch.
-                // For completed transcriptions, null should not occur but we normalize to empty string
-                // For failed transcriptions, null is expected and we preserve it as empty string
-                var transcriptText = existingResult.TranscriptText ?? string.Empty;
-                if (existingResult.Status == TranscriptionStatus.Completed && existingResult.TranscriptText == null)
+                if (existingResult != null)
                 {
-                    _logger.LogWarning(
-                        "Completed transcription has null TranscriptText for JobId: {JobId}, FileId: {FileId}. Treating as empty string.",
+                    _logger.LogInformation(
+                        "Found existing transcription result for JobId: {JobId}, FileId: {FileId}, Status: {Status}",
                         input.JobId,
-                        input.FileId);
+                        input.FileId,
+                        existingResult.Status);
+
+                    // Handle null TranscriptText appropriately based on status
+                    // Note: TranscriptionDocument (DB entity) allows nullable TranscriptText, but TranscriptionResult
+                    // has TranscriptText marked as required (non-null). We normalize null from the DB to empty string
+                    // here to safely bridge that schema/model mismatch.
+                    // For completed transcriptions, null should not occur but we normalize to empty string
+                    // For failed transcriptions, null is expected and we preserve it as empty string
+                    var transcriptText = existingResult.TranscriptText ?? string.Empty;
+                    if (existingResult.Status == TranscriptionStatus.Completed && existingResult.TranscriptText == null)
+                    {
+                        _logger.LogWarning(
+                            "Completed transcription has null TranscriptText for JobId: {JobId}, FileId: {FileId}. Treating as empty string.",
+                            input.JobId,
+                            input.FileId);
+                    }
+
+                    return new TranscriptionResult
+                    {
+                        FileId = existingResult.FileId,
+                        TranscriptText = transcriptText,
+                        Confidence = existingResult.Confidence,
+                        Status = existingResult.Status,
+                        IsExistingResult = true  // Mark as existing to skip re-saving
+                    };
                 }
 
-                return new TranscriptionResult
-                {
-                    FileId = existingResult.FileId,
-                    TranscriptText = transcriptText,
-                    Confidence = existingResult.Confidence,
-                    Status = existingResult.Status,
-                    IsExistingResult = true  // Mark as existing to skip re-saving
-                };
+                _logger.LogInformation(
+                    "No existing transcription result found for JobId: {JobId}, FileId: {FileId}",
+                    input.JobId,
+                    input.FileId);
+
+                return null;
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error checking for existing transcription result for JobId: {JobId}, FileId: {FileId}",
+                    input.JobId,
+                    input.FileId);
 
-            _logger.LogInformation(
-                "No existing transcription result found for JobId: {JobId}, FileId: {FileId}",
-                input.JobId,
-                input.FileId);
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Error checking for existing transcription result for JobId: {JobId}, FileId: {FileId}",
-                input.JobId,
-                input.FileId);
-            
-            // Re-throw original exception to preserve exception type information
-            // Context is already logged above
-            throw;
+                // Re-throw original exception to preserve exception type information
+                // Context is already logged above
+                throw;
+            }
         }
     }
 }

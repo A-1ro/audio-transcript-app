@@ -1,3 +1,4 @@
+using Microsoft.ApplicationInsights;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
@@ -62,5 +63,8 @@ builder.Services.AddSingleton<IJobRepository, CosmosDbJobRepository>();
 
 // Transcription Repository の登録
 builder.Services.AddSingleton<ITranscriptionRepository, CosmosDbTranscriptionRepository>();
+
+// Telemetry Service の登録
+builder.Services.AddSingleton<ITelemetryService, ApplicationInsightsTelemetryService>();
 
 builder.Build().Run();

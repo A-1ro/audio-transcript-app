@@ -30,23 +30,27 @@ public class GetJobInfoActivity
             throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
         }
 
-        _logger.LogInformation("Getting job info for JobId: {JobId}", jobId);
-
-        // TODO: 実際にはCosmosDBなどからジョブ情報を取得
-        // 今回はモックデータを返す
-        await Task.Delay(100); // 非同期処理のシミュレーション
-
-        var jobInfo = new JobInfo
+        // ログスコープにJobIdを追加
+        using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = jobId }))
         {
-            JobId = jobId,
-            Status = JobStatus.Processing,
-            CreatedAt = DateTime.UtcNow.AddMinutes(-5), // Mock created time
-            StartedAt = null,
-            FinishedAt = null
-        };
+            _logger.LogInformation("Getting job info for JobId: {JobId}", jobId);
 
-        _logger.LogInformation("Job info retrieved for JobId: {JobId}", jobId);
+            // TODO: 実際にはCosmosDBなどからジョブ情報を取得
+            // 今回はモックデータを返す
+            await Task.Delay(100); // 非同期処理のシミュレーション
 
-        return jobInfo;
+            var jobInfo = new JobInfo
+            {
+                JobId = jobId,
+                Status = JobStatus.Processing,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5), // Mock created time
+                StartedAt = null,
+                FinishedAt = null
+            };
+
+            _logger.LogInformation("Job info retrieved for JobId: {JobId}", jobId);
+
+            return jobInfo;
+        }
     }
 }
