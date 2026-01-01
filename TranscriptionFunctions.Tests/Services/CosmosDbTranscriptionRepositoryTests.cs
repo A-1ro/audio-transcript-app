@@ -128,6 +128,15 @@ public class CosmosDbTranscriptionRepositoryTests
         var confidence = 0.95;
         var status = TranscriptionStatus.Completed;
 
+        // Mock ReadItemAsync to throw NotFound (document doesn't exist yet)
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<TranscriptionDocument>(
+                It.IsAny<string>(),
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Not found", System.Net.HttpStatusCode.NotFound, 0, "", 0));
+
         var mockResponse = new Mock<ItemResponse<TranscriptionDocument>>();
         mockResponse.Setup(r => r.Resource).Returns(
             It.IsAny<TranscriptionDocument>());
@@ -197,6 +206,15 @@ public class CosmosDbTranscriptionRepositoryTests
         var confidence = 0.0;
         var status = TranscriptionStatus.Failed;
 
+        // Mock ReadItemAsync to throw NotFound (document doesn't exist yet)
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<TranscriptionDocument>(
+                It.IsAny<string>(),
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Not found", System.Net.HttpStatusCode.NotFound, 0, "", 0));
+
         var mockResponse = new Mock<ItemResponse<TranscriptionDocument>>();
         mockResponse.Setup(r => r.Resource).Returns(
             It.IsAny<TranscriptionDocument>());
@@ -238,6 +256,15 @@ public class CosmosDbTranscriptionRepositoryTests
         var status = TranscriptionStatus.Completed;
         var rawResult = "{\"raw\":\"data\"}";
 
+        // Mock ReadItemAsync to throw NotFound (document doesn't exist yet)
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<TranscriptionDocument>(
+                It.IsAny<string>(),
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Not found", System.Net.HttpStatusCode.NotFound, 0, "", 0));
+
         var mockResponse = new Mock<ItemResponse<TranscriptionDocument>>();
         mockResponse.Setup(r => r.Resource).Returns(
             It.IsAny<TranscriptionDocument>());
@@ -264,6 +291,73 @@ public class CosmosDbTranscriptionRepositoryTests
             c => c.UpsertItemAsync(
                 It.Is<TranscriptionDocument>(d =>
                     d.RawResult == rawResult),
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_WhenDocumentExists_PreservesCreatedAt()
+    {
+        // Arrange
+        var jobId = "job-123";
+        var fileId = "file-001";
+        var transcriptText = "Test";
+        var confidence = 0.95;
+        var status = TranscriptionStatus.Completed;
+        var originalCreatedAt = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        var existingDocument = new TranscriptionDocument
+        {
+            Id = $"{jobId}_{fileId}",
+            JobId = jobId,
+            FileId = fileId,
+            TranscriptText = "Old text",
+            Confidence = 0.8,
+            Status = TranscriptionStatus.Completed,
+            CreatedAt = originalCreatedAt
+        };
+
+        var mockReadResponse = new Mock<ItemResponse<TranscriptionDocument>>();
+        mockReadResponse.Setup(r => r.Resource).Returns(existingDocument);
+
+        // Mock ReadItemAsync to return existing document
+        _mockContainer
+            .Setup(c => c.ReadItemAsync<TranscriptionDocument>(
+                $"{jobId}_{fileId}",
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockReadResponse.Object);
+
+        var mockUpsertResponse = new Mock<ItemResponse<TranscriptionDocument>>();
+        mockUpsertResponse.Setup(r => r.Resource).Returns(
+            It.IsAny<TranscriptionDocument>());
+
+        _mockContainer
+            .Setup(c => c.UpsertItemAsync(
+                It.IsAny<TranscriptionDocument>(),
+                It.IsAny<PartitionKey>(),
+                It.IsAny<ItemRequestOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockUpsertResponse.Object);
+
+        // Act
+        await _repository.SaveTranscriptionAsync(
+            jobId,
+            fileId,
+            transcriptText,
+            confidence,
+            status);
+
+        // Assert - CreatedAt should be preserved from original document
+        _mockContainer.Verify(
+            c => c.UpsertItemAsync(
+                It.Is<TranscriptionDocument>(d =>
+                    d.CreatedAt == originalCreatedAt &&
+                    d.TranscriptText == transcriptText &&
+                    d.Confidence == confidence),
                 It.IsAny<PartitionKey>(),
                 It.IsAny<ItemRequestOptions>(),
                 It.IsAny<CancellationToken>()),

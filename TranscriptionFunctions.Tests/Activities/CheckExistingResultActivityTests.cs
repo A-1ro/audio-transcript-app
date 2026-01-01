@@ -61,6 +61,7 @@ public class CheckExistingResultActivityTests
         Assert.Equal("Existing transcription", result.TranscriptText);
         Assert.Equal(0.95, result.Confidence);
         Assert.Equal(TranscriptionStatus.Completed, result.Status);
+        Assert.True(result.IsExistingResult);  // Should be marked as existing
     }
 
     [Fact]
@@ -178,6 +179,7 @@ public class CheckExistingResultActivityTests
         Assert.Equal("", result.TranscriptText);
         Assert.Equal(0.0, result.Confidence);
         Assert.Equal(TranscriptionStatus.Failed, result.Status);
+        Assert.True(result.IsExistingResult);  // Should be marked as existing
     }
 
     [Fact]

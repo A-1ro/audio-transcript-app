@@ -193,9 +193,18 @@ public class TranscriptionOrchestrator
             logger.LogInformation("All transcription batches completed for JobId: {JobId}", jobId);
             var results = allResults.ToArray();
 
-            // 5. 結果保存 - Cosmos DBに永続化
-            logger.LogInformation("Saving transcription results for JobId: {JobId}", jobId);
-            var saveResultTasks = results.Select(result =>
+            // 5. 結果保存 - Cosmos DBに永続化（新規結果のみ）
+            // 既存結果は既にDBに存在するため、再保存をスキップして不要なDB書き込みを削減
+            var newResults = results.Where(r => !r.IsExistingResult).ToArray();
+            var existingResultsCount = results.Length - newResults.Length;
+            
+            logger.LogInformation(
+                "Saving {NewCount} new transcription results for JobId: {JobId} (skipping {ExistingCount} existing results)",
+                newResults.Length,
+                jobId,
+                existingResultsCount);
+            
+            var saveResultTasks = newResults.Select(result =>
             {
                 var saveInput = new SaveResultInput
                 {
@@ -213,7 +222,7 @@ public class TranscriptionOrchestrator
             }).ToList();
 
             await Task.WhenAll(saveResultTasks);
-            logger.LogInformation("All transcription results saved for JobId: {JobId}", jobId);
+            logger.LogInformation("All new transcription results saved for JobId: {JobId}", jobId);
 
             // 6. 結果分析と状態決定
             var successCount = results.Count(r => r.Status == TranscriptionStatus.Completed);

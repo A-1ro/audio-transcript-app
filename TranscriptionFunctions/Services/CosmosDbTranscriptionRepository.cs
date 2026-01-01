@@ -120,10 +120,35 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
 
         var documentId = CreateDocumentId(jobId, fileId);
 
-        // Note: Using DateTime.UtcNow for CreatedAt. This is acceptable here as:
-        // 1. Cosmos DB also manages its own _ts timestamp field
-        // 2. CreatedAt is informational and doesn't affect business logic
-        // 3. For testability improvements, consider injecting IDateTimeProvider in the future
+        // Check if document already exists to preserve CreatedAt timestamp
+        DateTime createdAt;
+        try
+        {
+            var existingDoc = await _container.ReadItemAsync<TranscriptionDocument>(
+                documentId,
+                new PartitionKey(jobId),
+                cancellationToken: cancellationToken);
+            
+            // Preserve original CreatedAt for true idempotency
+            createdAt = existingDoc.Resource.CreatedAt;
+            
+            _logger.LogDebug(
+                "Updating existing transcription for JobId: {JobId}, FileId: {FileId}, preserving CreatedAt: {CreatedAt}",
+                jobId,
+                fileId,
+                createdAt);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Document doesn't exist, use current time
+            createdAt = DateTime.UtcNow;
+            
+            _logger.LogDebug(
+                "Creating new transcription for JobId: {JobId}, FileId: {FileId}",
+                jobId,
+                fileId);
+        }
+
         var document = new TranscriptionDocument
         {
             Id = documentId,
@@ -133,7 +158,7 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
             Confidence = confidence,
             Status = status,
             RawResult = rawResult,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = createdAt
         };
 
         try

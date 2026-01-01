@@ -70,6 +70,9 @@ public class CheckExistingResultActivity
                     existingResult.Status);
 
                 // Handle null TranscriptText appropriately based on status
+                // Note: TranscriptionDocument (DB entity) allows nullable TranscriptText, but TranscriptionResult
+                // has TranscriptText marked as required (non-null). We normalize null from the DB to empty string
+                // here to safely bridge that schema/model mismatch.
                 // For completed transcriptions, null should not occur but we normalize to empty string
                 // For failed transcriptions, null is expected and we preserve it as empty string
                 var transcriptText = existingResult.TranscriptText ?? string.Empty;
@@ -86,7 +89,8 @@ public class CheckExistingResultActivity
                     FileId = existingResult.FileId,
                     TranscriptText = transcriptText,
                     Confidence = existingResult.Confidence,
-                    Status = existingResult.Status
+                    Status = existingResult.Status,
+                    IsExistingResult = true  // Mark as existing to skip re-saving
                 };
             }
 

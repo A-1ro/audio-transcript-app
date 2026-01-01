@@ -130,7 +130,8 @@ public class TranscribeAudioActivity
                 FileId = input.FileId,
                 TranscriptText = transcriptText,
                 Confidence = confidence,
-                Status = TranscriptionStatus.Completed
+                Status = TranscriptionStatus.Completed,
+                IsExistingResult = false  // New transcription result
             };
         }
         catch (Exception ex)
@@ -147,7 +148,8 @@ public class TranscribeAudioActivity
                 FileId = input.FileId,
                 TranscriptText = string.Empty,
                 Confidence = 0.0,
-                Status = TranscriptionStatus.Failed
+                Status = TranscriptionStatus.Failed,
+                IsExistingResult = false  // New transcription result
             };
         }
     }
