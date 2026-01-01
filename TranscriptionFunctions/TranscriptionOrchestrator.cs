@@ -301,7 +301,7 @@ public class TranscriptionOrchestrator
                     Duration = jobDuration,
                     TotalFiles = totalCount,
                     SuccessCount = successCount,
-                    FailureCount = failureCount
+                    FailureCount = failureCount + unexpectedCount  // Include unexpected status files in failure count
                 });
 
             logger.LogInformation(

@@ -8,6 +8,11 @@ namespace TranscriptionFunctions.Activities;
 /// <summary>
 /// テレメトリ記録Activity
 /// メトリクスとイベントをApplication Insightsに送信する
+/// 
+/// NOTE: TrackTranscriptionSuccess および TrackTranscriptionFailure は
+/// ファイル単位のテレメトリを記録するためのインフラストラクチャです。
+/// 現在はジョブレベルのメトリクスのみを記録していますが、
+/// 将来的に詳細な分析が必要になった場合に使用できます。
 /// </summary>
 public class TrackTelemetryActivity
 {

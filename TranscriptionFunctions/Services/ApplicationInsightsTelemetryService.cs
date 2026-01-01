@@ -18,6 +18,13 @@ public class ApplicationInsightsTelemetryService : ITelemetryService
     /// <inheritdoc/>
     public void TrackTranscriptionSuccess(string jobId, string fileId, TimeSpan duration)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        if (string.IsNullOrWhiteSpace(fileId))
+            throw new ArgumentException("FileId cannot be null or empty", nameof(fileId));
+        if (duration < TimeSpan.Zero)
+            throw new ArgumentException("Duration cannot be negative", nameof(duration));
+
         var properties = new Dictionary<string, string>
         {
             { "JobId", jobId },
@@ -38,6 +45,15 @@ public class ApplicationInsightsTelemetryService : ITelemetryService
     /// <inheritdoc/>
     public void TrackTranscriptionFailure(string jobId, string fileId, TimeSpan duration, string errorMessage)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        if (string.IsNullOrWhiteSpace(fileId))
+            throw new ArgumentException("FileId cannot be null or empty", nameof(fileId));
+        if (duration < TimeSpan.Zero)
+            throw new ArgumentException("Duration cannot be negative", nameof(duration));
+        if (string.IsNullOrWhiteSpace(errorMessage))
+            throw new ArgumentException("ErrorMessage cannot be null or empty", nameof(errorMessage));
+
         var properties = new Dictionary<string, string>
         {
             { "JobId", jobId },
@@ -59,6 +75,17 @@ public class ApplicationInsightsTelemetryService : ITelemetryService
     /// <inheritdoc/>
     public void TrackJobCompletion(string jobId, TimeSpan duration, int totalFiles, int successCount, int failureCount)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        if (duration < TimeSpan.Zero)
+            throw new ArgumentException("Duration cannot be negative", nameof(duration));
+        if (totalFiles < 0)
+            throw new ArgumentException("TotalFiles cannot be negative", nameof(totalFiles));
+        if (successCount < 0)
+            throw new ArgumentException("SuccessCount cannot be negative", nameof(successCount));
+        if (failureCount < 0)
+            throw new ArgumentException("FailureCount cannot be negative", nameof(failureCount));
+
         var properties = new Dictionary<string, string>
         {
             { "JobId", jobId },

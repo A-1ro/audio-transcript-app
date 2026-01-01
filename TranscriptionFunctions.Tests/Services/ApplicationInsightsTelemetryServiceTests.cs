@@ -11,8 +11,9 @@ namespace TranscriptionFunctions.Tests.Services;
 /// <summary>
 /// ApplicationInsightsTelemetryServiceのテスト
 /// </summary>
-public class ApplicationInsightsTelemetryServiceTests
+public class ApplicationInsightsTelemetryServiceTests : IDisposable
 {
+    private readonly TelemetryConfiguration _telemetryConfig;
     private readonly TelemetryClient _telemetryClient;
     private readonly ApplicationInsightsTelemetryService _service;
     private readonly List<ITelemetry> _telemetryItems;
@@ -20,15 +21,20 @@ public class ApplicationInsightsTelemetryServiceTests
     public ApplicationInsightsTelemetryServiceTests()
     {
         // テスト用のTelemetryClientを作成
-        var telemetryConfig = new TelemetryConfiguration
+        _telemetryConfig = new TelemetryConfiguration
         {
             TelemetryChannel = new StubTelemetryChannel()
         };
-        _telemetryClient = new TelemetryClient(telemetryConfig);
+        _telemetryClient = new TelemetryClient(_telemetryConfig);
         _telemetryItems = new List<ITelemetry>();
-        ((StubTelemetryChannel)telemetryConfig.TelemetryChannel).OnSend = item => _telemetryItems.Add(item);
+        ((StubTelemetryChannel)_telemetryConfig.TelemetryChannel).OnSend = item => _telemetryItems.Add(item);
         
         _service = new ApplicationInsightsTelemetryService(_telemetryClient);
+    }
+
+    public void Dispose()
+    {
+        _telemetryConfig?.Dispose();
     }
 
     [Fact]
@@ -201,6 +207,77 @@ public class ApplicationInsightsTelemetryServiceTests
         // JobFailureCountが記録されることを確認
         var failureMetric = metrics.FirstOrDefault(m => m.Name == "JobFailureCount");
         Assert.NotNull(failureMetric);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void TrackTranscriptionSuccess_WithInvalidJobId_ThrowsArgumentException(string invalidJobId)
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackTranscriptionSuccess(invalidJobId, "file-123", TimeSpan.FromSeconds(10)));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void TrackTranscriptionSuccess_WithInvalidFileId_ThrowsArgumentException(string invalidFileId)
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackTranscriptionSuccess("job-123", invalidFileId, TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public void TrackTranscriptionSuccess_WithNegativeDuration_ThrowsArgumentException()
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackTranscriptionSuccess("job-123", "file-123", TimeSpan.FromSeconds(-1)));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void TrackTranscriptionFailure_WithInvalidErrorMessage_ThrowsArgumentException(string invalidErrorMessage)
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackTranscriptionFailure("job-123", "file-123", TimeSpan.FromSeconds(5), invalidErrorMessage));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void TrackJobCompletion_WithInvalidJobId_ThrowsArgumentException(string invalidJobId)
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackJobCompletion(invalidJobId, TimeSpan.FromMinutes(1), 10, 5, 5));
+    }
+
+    [Fact]
+    public void TrackJobCompletion_WithNegativeDuration_ThrowsArgumentException()
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackJobCompletion("job-123", TimeSpan.FromSeconds(-1), 10, 5, 5));
+    }
+
+    [Theory]
+    [InlineData(-1, 0, 0)]
+    [InlineData(0, -1, 0)]
+    [InlineData(0, 0, -1)]
+    public void TrackJobCompletion_WithNegativeCounts_ThrowsArgumentException(int totalFiles, int successCount, int failureCount)
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() =>
+            _service.TrackJobCompletion("job-123", TimeSpan.FromMinutes(1), totalFiles, successCount, failureCount));
     }
 }
 
