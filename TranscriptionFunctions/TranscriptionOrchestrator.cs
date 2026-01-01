@@ -120,7 +120,9 @@ public class TranscriptionOrchestrator
                     batch.Count,
                     jobId);
 
-                var transcriptionTasks = batch.Select(audioFile =>
+                // 各ファイルに対して冪等性チェックと文字起こしタスクを作成
+                // 決定性を保つため、まず全ての既存結果チェックタスクを作成
+                var checkTasks = batch.Select(audioFile =>
                 {
                     var input = new TranscriptionInput
                     {
@@ -129,11 +131,52 @@ public class TranscriptionOrchestrator
                         BlobUrl = audioFile.BlobUrl
                     };
 
-                    return context.CallActivityAsync<TranscriptionResult>(
-                        nameof(TranscribeAudioActivity),
+                    return context.CallActivityAsync<TranscriptionResult?>(
+                        nameof(CheckExistingResultActivity),
                         input,
                         retryOptions);
                 }).ToList();
+
+                // 全てのチェックタスクが完了するまで待機
+                var checkResults = await Task.WhenAll(checkTasks);
+
+                // チェック結果に基づいて文字起こしタスクを作成
+                var transcriptionTasks = new List<Task<TranscriptionResult>>();
+                for (int fileIndex = 0; fileIndex < batch.Count; fileIndex++)
+                {
+                    var audioFile = batch[fileIndex];
+                    var existingResult = checkResults[fileIndex];
+
+                    if (existingResult != null)
+                    {
+                        logger.LogInformation(
+                            "Using existing transcription result for JobId: {JobId}, FileId: {FileId}",
+                            jobId,
+                            audioFile.FileId);
+                        // 既存結果をタスクとして返す
+                        transcriptionTasks.Add(Task.FromResult(existingResult));
+                    }
+                    else
+                    {
+                        // 既存結果がない場合のみ新規文字起こしを実行
+                        logger.LogInformation(
+                            "No existing result found, transcribing audio for JobId: {JobId}, FileId: {FileId}",
+                            jobId,
+                            audioFile.FileId);
+
+                        var input = new TranscriptionInput
+                        {
+                            JobId = jobId,
+                            FileId = audioFile.FileId,
+                            BlobUrl = audioFile.BlobUrl
+                        };
+
+                        transcriptionTasks.Add(context.CallActivityAsync<TranscriptionResult>(
+                            nameof(TranscribeAudioActivity),
+                            input,
+                            retryOptions));
+                    }
+                }
 
                 // バッチ内の全タスクが完了するまで待機
                 var batchResults = await Task.WhenAll(transcriptionTasks);
@@ -150,9 +193,18 @@ public class TranscriptionOrchestrator
             logger.LogInformation("All transcription batches completed for JobId: {JobId}", jobId);
             var results = allResults.ToArray();
 
-            // 5. 結果保存 - Cosmos DBに永続化
-            logger.LogInformation("Saving transcription results for JobId: {JobId}", jobId);
-            var saveResultTasks = results.Select(result =>
+            // 5. 結果保存 - Cosmos DBに永続化（新規結果のみ）
+            // 既存結果は既にDBに存在するため、再保存をスキップして不要なDB書き込みを削減
+            var newResults = results.Where(r => !r.IsExistingResult).ToArray();
+            var existingResultsCount = results.Length - newResults.Length;
+            
+            logger.LogInformation(
+                "Saving {NewCount} new transcription results for JobId: {JobId} (skipping {ExistingCount} existing results)",
+                newResults.Length,
+                jobId,
+                existingResultsCount);
+            
+            var saveResultTasks = newResults.Select(result =>
             {
                 var saveInput = new SaveResultInput
                 {
@@ -170,7 +222,7 @@ public class TranscriptionOrchestrator
             }).ToList();
 
             await Task.WhenAll(saveResultTasks);
-            logger.LogInformation("All transcription results saved for JobId: {JobId}", jobId);
+            logger.LogInformation("All new transcription results saved for JobId: {JobId}", jobId);
 
             // 6. 結果分析と状態決定
             var successCount = results.Count(r => r.Status == TranscriptionStatus.Completed);
