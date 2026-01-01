@@ -357,7 +357,7 @@ public class CosmosDbTranscriptionRepositoryTests
                 It.Is<TranscriptionDocument>(d =>
                     d.CreatedAt == originalCreatedAt &&
                     d.TranscriptText == transcriptText &&
-                    d.Confidence == confidence),
+                    Math.Abs(d.Confidence - confidence) < 0.0001),
                 It.IsAny<PartitionKey>(),
                 It.IsAny<ItemRequestOptions>(),
                 It.IsAny<CancellationToken>()),

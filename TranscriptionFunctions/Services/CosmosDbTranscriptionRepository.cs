@@ -121,6 +121,11 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
         var documentId = CreateDocumentId(jobId, fileId);
 
         // Check if document already exists to preserve CreatedAt timestamp
+        // Design tradeoff: This performs an extra read operation before every upsert.
+        // For new documents, this results in a NotFound response (extra cost), but it's necessary
+        // to preserve CreatedAt for existing documents and maintain true idempotency.
+        // Alternative approaches (e.g., conditional upsert with ETag) would be more complex
+        // and this prioritizes correctness and simplicity over performance.
         DateTime createdAt;
         try
         {
@@ -190,10 +195,9 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 jobId,
                 fileId);
             
-            // Re-throw with additional context to aid debugging
-            throw new InvalidOperationException(
-                $"Failed to save transcription result for JobId: {jobId}, FileId: {fileId}. Document ID: {documentId}",
-                ex);
+            // Re-throw original exception to preserve exception type information
+            // Context is already logged above
+            throw;
         }
     }
 }

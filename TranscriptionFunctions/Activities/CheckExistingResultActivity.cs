@@ -109,10 +109,9 @@ public class CheckExistingResultActivity
                 input.JobId,
                 input.FileId);
             
-            // Re-throw with additional context to aid debugging
-            throw new InvalidOperationException(
-                $"Failed to check existing transcription result for JobId: {input.JobId}, FileId: {input.FileId}",
-                ex);
+            // Re-throw original exception to preserve exception type information
+            // Context is already logged above
+            throw;
         }
     }
 }
