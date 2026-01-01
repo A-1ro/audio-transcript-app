@@ -11,6 +11,8 @@ namespace TranscriptionFunctions.Activities;
 /// </summary>
 public class TrackTelemetryActivity
 {
+    private const string DefaultErrorMessage = "Unknown error";
+    
     private readonly ILogger<TrackTelemetryActivity> _logger;
     private readonly ITelemetryService _telemetryService;
 
@@ -76,7 +78,7 @@ public class TrackTelemetryActivity
                 input.JobId,
                 input.FileId,
                 input.Duration,
-                input.ErrorMessage ?? "Unknown error");
+                input.ErrorMessage ?? DefaultErrorMessage);
         }
 
         return Task.CompletedTask;

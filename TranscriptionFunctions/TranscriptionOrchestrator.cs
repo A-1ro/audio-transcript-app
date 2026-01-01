@@ -89,6 +89,18 @@ public class TranscriptionOrchestrator
                     },
                     retryOptions);
 
+                // テレメトリを記録 - ファイルが見つからなかった場合
+                await context.CallActivityAsync(
+                    nameof(TrackTelemetryActivity.TrackJobCompletion),
+                    new JobTelemetryInput
+                    {
+                        JobId = jobId,
+                        Duration = context.CurrentUtcDateTime - orchestrationStartTime,
+                        TotalFiles = 0,
+                        SuccessCount = 0,
+                        FailureCount = 1  // Job-level failure
+                    });
+
                 return;
             }
 
@@ -320,16 +332,15 @@ public class TranscriptionOrchestrator
                     retryOptions);
                 
                 // 失敗したジョブのテレメトリを記録
-                var jobDuration = context.CurrentUtcDateTime - orchestrationStartTime;
                 await context.CallActivityAsync(
                     nameof(TrackTelemetryActivity.TrackJobCompletion),
                     new JobTelemetryInput
                     {
                         JobId = jobId,
-                        Duration = jobDuration,
-                        TotalFiles = 0,  // Exception occurred before processing files
+                        Duration = context.CurrentUtcDateTime - orchestrationStartTime,
+                        TotalFiles = 0,
                         SuccessCount = 0,
-                        FailureCount = 0  // Will be counted as job failure
+                        FailureCount = 1  // Job-level failure (orchestration exception)
                     });
             }
             catch (Exception updateEx)

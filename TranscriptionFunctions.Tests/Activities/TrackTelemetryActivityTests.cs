@@ -79,7 +79,7 @@ public class TrackTelemetryActivityTests
     }
 
     [Fact]
-    public async Task TrackTranscriptionFailure_WithNullErrorMessage_UsesUnknownError()
+    public async Task TrackTranscriptionFailure_WithNullErrorMessage_UsesDefaultErrorMessage()
     {
         // Arrange
         var input = new TranscriptionTelemetryInput
@@ -99,7 +99,7 @@ public class TrackTelemetryActivityTests
                 input.JobId,
                 input.FileId,
                 input.Duration,
-                "Unknown error"),
+                "Unknown error"),  // DefaultErrorMessage constant value
             Times.Once);
     }
 
