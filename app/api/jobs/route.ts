@@ -1,26 +1,39 @@
 import { NextResponse } from "next/server";
 
-// Mock job data - in production this would query Azure Cosmos DB
-const mockJobs = [
-  {
-    jobId: "550e8400-e29b-41d4-a716-446655440001",
-    status: "Completed",
-    createdAt: "2025-12-27T10:21:00Z",
-  },
-  {
-    jobId: "550e8400-e29b-41d4-a716-446655440002",
-    status: "Processing",
-    createdAt: "2025-12-27T10:45:00Z",
-  },
-  {
-    jobId: "550e8400-e29b-41d4-a716-446655440003",
-    status: "Uploaded",
-    createdAt: "2025-12-27T11:30:00Z",
-  },
-];
-
 export async function GET() {
-  // Simulate Azure Cosmos DB response
-  // In production: query Cosmos DB and return actual job records
-  return NextResponse.json(mockJobs);
+  try {
+    // Get Azure Functions API URL from environment variable
+    const functionsUrl = process.env.AZURE_FUNCTIONS_URL;
+
+    if (!functionsUrl) {
+      // If no Azure Functions URL is configured, return error
+      // In production, this should be configured in environment variables
+      console.error("AZURE_FUNCTIONS_URL is not configured");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    // Call the Azure Function to get jobs
+    const response = await fetch(`${functionsUrl}/api/jobs`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch jobs: ${response.statusText}`);
+    }
+
+    const jobs = await response.json();
+    return NextResponse.json(jobs);
+  } catch (error) {
+    console.error("Error fetching jobs:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch jobs" },
+      { status: 500 }
+    );
+  }
 }

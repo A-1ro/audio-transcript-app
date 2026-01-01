@@ -580,4 +580,153 @@ public class CosmosDbJobRepositoryTests
         // Assert
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task GetAllJobsAsync_ReturnsJobsOrderedByCreatedAtDescending()
+    {
+        // Arrange
+        var jobs = new List<JobDocument>
+        {
+            new JobDocument
+            {
+                Id = "job-1",
+                JobId = "job-1",
+                Status = JobStatus.Completed,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30)
+            },
+            new JobDocument
+            {
+                Id = "job-2",
+                JobId = "job-2",
+                Status = JobStatus.Processing,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-10)
+            },
+            new JobDocument
+            {
+                Id = "job-3",
+                JobId = "job-3",
+                Status = JobStatus.Pending,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5)
+            }
+        };
+
+        var mockFeedResponse = new Mock<FeedResponse<JobDocument>>();
+        mockFeedResponse.Setup(r => r.GetEnumerator()).Returns(jobs.GetEnumerator());
+        mockFeedResponse.Setup(r => r.RequestCharge).Returns(2.5);
+
+        var mockIterator = new Mock<FeedIterator<JobDocument>>();
+        mockIterator.SetupSequence(i => i.HasMoreResults)
+            .Returns(true)
+            .Returns(false);
+        mockIterator
+            .Setup(i => i.ReadNextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockFeedResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.GetItemQueryIterator<JobDocument>(
+                It.IsAny<QueryDefinition>(),
+                null,
+                It.IsAny<QueryRequestOptions>()))
+            .Returns(mockIterator.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.GetAllJobsAsync();
+
+        // Assert
+        Assert.NotNull(result);
+        var jobList = result.ToList();
+        Assert.Equal(3, jobList.Count);
+        Assert.Equal("job-1", jobList[0].JobId);
+        Assert.Equal("job-2", jobList[1].JobId);
+        Assert.Equal("job-3", jobList[2].JobId);
+    }
+
+    [Fact]
+    public async Task GetAllJobsAsync_WithMaxItems_LimitsResults()
+    {
+        // Arrange
+        var maxItems = 2;
+
+        var mockIterator = new Mock<FeedIterator<JobDocument>>();
+        mockIterator.SetupSequence(i => i.HasMoreResults)
+            .Returns(true)
+            .Returns(false);
+
+        var mockFeedResponse = new Mock<FeedResponse<JobDocument>>();
+        mockFeedResponse.Setup(r => r.GetEnumerator()).Returns(new List<JobDocument>().GetEnumerator());
+        mockFeedResponse.Setup(r => r.RequestCharge).Returns(1.0);
+
+        mockIterator
+            .Setup(i => i.ReadNextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockFeedResponse.Object);
+
+        _mockContainer
+            .Setup(c => c.GetItemQueryIterator<JobDocument>(
+                It.IsAny<QueryDefinition>(),
+                null,
+                It.Is<QueryRequestOptions>(opts => opts.MaxItemCount == maxItems)))
+            .Returns(mockIterator.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.GetAllJobsAsync(maxItems);
+
+        // Assert
+        _mockContainer.Verify(
+            c => c.GetItemQueryIterator<JobDocument>(
+                It.IsAny<QueryDefinition>(),
+                null,
+                It.Is<QueryRequestOptions>(opts => opts.MaxItemCount == maxItems)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetAllJobsAsync_WithInvalidMaxItems_ThrowsArgumentException()
+    {
+        // Arrange
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.GetAllJobsAsync(0));
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.GetAllJobsAsync(-1));
+    }
+
+    [Fact]
+    public async Task GetAllJobsAsync_WithNoJobs_ReturnsEmptyList()
+    {
+        // Arrange
+        var mockIterator = new Mock<FeedIterator<JobDocument>>();
+        mockIterator.Setup(i => i.HasMoreResults).Returns(false);
+
+        _mockContainer
+            .Setup(c => c.GetItemQueryIterator<JobDocument>(
+                It.IsAny<QueryDefinition>(),
+                null,
+                It.IsAny<QueryRequestOptions>()))
+            .Returns(mockIterator.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.GetAllJobsAsync();
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result);
+    }
 }

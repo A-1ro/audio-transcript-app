@@ -29,4 +29,12 @@ public interface IJobRepository
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Job document or null if not found</returns>
     Task<JobDocument?> GetJobAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get all jobs ordered by creation date (descending)
+    /// </summary>
+    /// <param name="maxItems">Maximum number of items to return (default: 100)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of job documents</returns>
+    Task<IEnumerable<JobDocument>> GetAllJobsAsync(int maxItems = 100, CancellationToken cancellationToken = default);
 }
