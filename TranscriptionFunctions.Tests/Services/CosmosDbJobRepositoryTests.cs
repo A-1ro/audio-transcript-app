@@ -678,7 +678,7 @@ public class CosmosDbJobRepositoryTests
             _mockLogger.Object);
 
         // Act
-        var result = await repository.GetAllJobsAsync(maxItems);
+        _ = await repository.GetAllJobsAsync(maxItems);
 
         // Assert
         _mockContainer.Verify(

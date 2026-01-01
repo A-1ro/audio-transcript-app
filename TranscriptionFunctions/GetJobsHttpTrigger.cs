@@ -30,7 +30,7 @@ public class GetJobsHttpTrigger
     /// <returns>List of jobs</returns>
     [Function("GetJobs")]
     public async Task<HttpResponseData> RunAsync(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "jobs")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "jobs")] HttpRequestData req)
     {
         _logger.LogInformation("Processing GET /api/jobs request");
 
@@ -85,7 +85,7 @@ public class GetJobsHttpTrigger
             await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new
             {
                 error = "Failed to fetch jobs",
-                message = ex.Message
+                message = "An internal error occurred while processing the request."
             }));
 
             return errorResponse;
