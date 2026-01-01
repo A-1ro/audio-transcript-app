@@ -26,21 +26,21 @@ public class JobQueueTrigger
         [QueueTrigger("transcription-jobs", Connection = "AzureWebJobsStorage")] string queueMessage,
         [DurableClient] DurableTaskClient client)
     {
-        try
+        _logger.LogInformation("Queue trigger received message: {Message}", queueMessage);
+
+        // JobIdを取得 (メッセージがそのままJobIdと仮定)
+        var jobId = queueMessage;
+
+        if (string.IsNullOrWhiteSpace(jobId))
         {
-            _logger.LogInformation("Queue trigger received message: {Message}", queueMessage);
+            _logger.LogError("JobId is empty or null");
+            throw new ArgumentException("JobId cannot be empty", nameof(queueMessage));
+        }
 
-            // JobIdを取得 (メッセージがそのままJobIdと仮定)
-            var jobId = queueMessage;
-
-            if (string.IsNullOrWhiteSpace(jobId))
-            {
-                _logger.LogError("JobId is empty or null");
-                throw new ArgumentException("JobId cannot be empty", nameof(queueMessage));
-            }
-
-            // ログスコープにJobIdを追加
-            using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = jobId }))
+        // ログスコープにJobIdを追加 - エラーログにもJobIdが含まれるようにtry-catchを包含
+        using (_logger.BeginScope(new Dictionary<string, object> { ["JobId"] = jobId }))
+        {
+            try
             {
                 // TranscriptionOrchestratorを起動
                 var instanceId = await client.ScheduleNewOrchestrationInstanceAsync(
@@ -52,14 +52,14 @@ public class JobQueueTrigger
                     instanceId,
                     jobId);
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Failed to start orchestration for message: {Message}",
-                queueMessage);
-            throw;
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to start orchestration for message: {Message}",
+                    queueMessage);
+                throw;
+            }
         }
     }
 }

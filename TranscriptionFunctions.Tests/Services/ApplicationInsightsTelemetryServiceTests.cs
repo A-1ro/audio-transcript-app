@@ -34,6 +34,7 @@ public class ApplicationInsightsTelemetryServiceTests : IDisposable
 
     public void Dispose()
     {
+        _telemetryClient?.Flush();
         _telemetryConfig?.Dispose();
     }
 
