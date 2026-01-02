@@ -4,6 +4,7 @@ export async function GET() {
   try {
     // Get Azure Functions API URL from environment variable
     const functionsUrl = process.env.AZURE_FUNCTIONS_URL;
+    const apiKey = process.env.AZURE_FUNCTIONS_API_KEY;
 
     if (!functionsUrl) {
       // If no Azure Functions URL is configured, return error
@@ -16,12 +17,18 @@ export async function GET() {
     }
 
     // Call the Azure Function to get jobs
+    const headers: HeadersInit = {};
+    if (apiKey) {
+      headers["x-functions-key"] = apiKey;
+    }
+
     const response = await fetch(`${functionsUrl}/api/jobs`, {
       method: "GET",
+      headers,
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch jobs: ${response.statusText}`);
+      throw new Error("Failed to fetch jobs");
     }
 
     const jobs = await response.json();

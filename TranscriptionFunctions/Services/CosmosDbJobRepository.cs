@@ -278,6 +278,9 @@ public class CosmosDbJobRepository : IJobRepository
         {
             // Query all documents ordered by createdAt descending
             // Select only required fields to optimize data transfer and query performance
+            // NOTE: For optimal performance, ensure the Cosmos DB container has a composite (or range) index
+            // that includes /createdAt in descending order, e.g. in the indexing policy:
+            // "compositeIndexes": [ [ { "path": "/createdAt", "order": "descending" } ] ]
             var query = new QueryDefinition("SELECT c.id, c.jobId, c.status, c.createdAt FROM c ORDER BY c.createdAt DESC");
             
             var queryRequestOptions = new QueryRequestOptions
@@ -300,7 +303,8 @@ public class CosmosDbJobRepository : IJobRepository
                     response.RequestCharge);
             }
 
-            return results;
+            // Safety check: ensure we don't return more items than requested
+            return results.Take(maxItems).ToList();
         }
         catch (Exception ex)
         {

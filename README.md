@@ -34,6 +34,9 @@ cp .env.local.template .env.local
 - `AZURE_FUNCTIONS_URL`: Azure Functions API の URL
   - ローカル開発: `http://localhost:7071`
   - 本番環境: デプロイ済みの Azure Functions アプリの URL
+- `AZURE_FUNCTIONS_API_KEY`: Azure Functions の Function レベル API キー
+  - 本番環境では必須。Azure Portal の対象 Function App の「アプリケーション設定」や「関数キー」から取得してください。
+  - ローカル開発では、`local.settings.json` の `Values` セクションまたは Azure Functions Core Tools の起動ログに表示される `?code=...` の値を使用してください。
 
 ### 開発サーバーの起動
 

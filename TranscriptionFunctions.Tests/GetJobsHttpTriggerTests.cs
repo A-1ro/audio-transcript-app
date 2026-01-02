@@ -35,7 +35,9 @@ public class GetJobsHttpTriggerTests
             var mockResponse = new Mock<HttpResponseData>(_mockFunctionContext.Object);
             mockResponse.SetupProperty(r => r.StatusCode);
             mockResponse.SetupProperty(r => r.Headers, new HttpHeadersCollection());
-            mockResponse.SetupProperty(r => r.Body, new MemoryStream());
+            // Use a writable MemoryStream for testing
+            var memoryStream = new MemoryStream();
+            mockResponse.SetupGet(r => r.Body).Returns(memoryStream);
             return mockResponse.Object;
         });
 
@@ -118,7 +120,7 @@ public class GetJobsHttpTriggerTests
         var trigger = new GetJobsHttpTrigger(_mockJobRepository.Object, _mockLogger.Object);
 
         // Act
-        var response = await trigger.RunAsync(mockRequest.Object);
+        _ = await trigger.RunAsync(mockRequest.Object);
 
         // Assert
         _mockJobRepository.Verify(

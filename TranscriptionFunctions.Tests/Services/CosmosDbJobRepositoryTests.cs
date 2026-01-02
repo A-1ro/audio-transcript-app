@@ -584,15 +584,15 @@ public class CosmosDbJobRepositoryTests
     [Fact]
     public async Task GetAllJobsAsync_ReturnsJobsOrderedByCreatedAtDescending()
     {
-        // Arrange
+        // Arrange - jobs ordered by createdAt descending
         var jobs = new List<JobDocument>
         {
             new JobDocument
             {
-                Id = "job-1",
-                JobId = "job-1",
-                Status = JobStatus.Completed,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-30)
+                Id = "job-3",
+                JobId = "job-3",
+                Status = JobStatus.Pending,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5)  // Most recent
             },
             new JobDocument
             {
@@ -603,10 +603,10 @@ public class CosmosDbJobRepositoryTests
             },
             new JobDocument
             {
-                Id = "job-3",
-                JobId = "job-3",
-                Status = JobStatus.Pending,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-5)
+                Id = "job-1",
+                JobId = "job-1",
+                Status = JobStatus.Completed,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30)  // Oldest
             }
         };
 
@@ -641,9 +641,9 @@ public class CosmosDbJobRepositoryTests
         Assert.NotNull(result);
         var jobList = result.ToList();
         Assert.Equal(3, jobList.Count);
-        Assert.Equal("job-1", jobList[0].JobId);
+        Assert.Equal("job-3", jobList[0].JobId);
         Assert.Equal("job-2", jobList[1].JobId);
-        Assert.Equal("job-3", jobList[2].JobId);
+        Assert.Equal("job-1", jobList[2].JobId);
     }
 
     [Fact]
