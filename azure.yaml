@@ -1,0 +1,8 @@
+name: audio-transcript-app
+infra:
+  path: ./infra
+services:
+  transcription-functions:
+    project: ./TranscriptionFunctions
+    language: dotnet
+    host: function
