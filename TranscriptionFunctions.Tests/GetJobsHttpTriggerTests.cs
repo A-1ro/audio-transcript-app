@@ -14,17 +14,27 @@ namespace TranscriptionFunctions.Tests;
 /// <summary>
 /// GetJobsHttpTriggerのテスト
 /// </summary>
-public class GetJobsHttpTriggerTests
+public class GetJobsHttpTriggerTests : IDisposable
 {
     private readonly Mock<IJobRepository> _mockJobRepository;
     private readonly Mock<ILogger<GetJobsHttpTrigger>> _mockLogger;
     private readonly Mock<FunctionContext> _mockFunctionContext;
+    private readonly List<MemoryStream> _memoryStreams;
 
     public GetJobsHttpTriggerTests()
     {
         _mockJobRepository = new Mock<IJobRepository>();
         _mockLogger = new Mock<ILogger<GetJobsHttpTrigger>>();
         _mockFunctionContext = new Mock<FunctionContext>();
+        _memoryStreams = new List<MemoryStream>();
+    }
+
+    public void Dispose()
+    {
+        foreach (var stream in _memoryStreams)
+        {
+            stream?.Dispose();
+        }
     }
 
     private Mock<HttpRequestData> CreateMockRequest(string? maxItems = null)
@@ -35,8 +45,9 @@ public class GetJobsHttpTriggerTests
             var mockResponse = new Mock<HttpResponseData>(_mockFunctionContext.Object);
             mockResponse.SetupProperty(r => r.StatusCode);
             mockResponse.SetupProperty(r => r.Headers, new HttpHeadersCollection());
-            // Use a writable MemoryStream for testing
+            // Use a writable MemoryStream for testing and track it for disposal
             var memoryStream = new MemoryStream();
+            _memoryStreams.Add(memoryStream);
             mockResponse.SetupGet(r => r.Body).Returns(memoryStream);
             return mockResponse.Object;
         });
