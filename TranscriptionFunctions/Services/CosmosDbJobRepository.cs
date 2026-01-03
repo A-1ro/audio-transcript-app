@@ -258,4 +258,58 @@ public class CosmosDbJobRepository : IJobRepository
     {
         return TerminalStatuses.Contains(status);
     }
+
+    /// <summary>
+    /// Get all jobs ordered by creation date (descending)
+    /// </summary>
+    /// <param name="maxItems">Maximum number of items to return (default: 100)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of job documents</returns>
+    public async Task<IEnumerable<JobDocument>> GetAllJobsAsync(int maxItems = 100, CancellationToken cancellationToken = default)
+    {
+        if (maxItems <= 0)
+        {
+            throw new ArgumentException("MaxItems must be greater than 0", nameof(maxItems));
+        }
+
+        _logger.LogInformation("Fetching all jobs with maxItems: {MaxItems}", maxItems);
+
+        try
+        {
+            // Query all documents ordered by createdAt descending
+            // Select only required fields to optimize data transfer and query performance
+            // NOTE: For optimal performance, ensure the Cosmos DB container has a composite (or range) index
+            // that includes /createdAt in descending order, e.g. in the indexing policy:
+            // "compositeIndexes": [ [ { "path": "/createdAt", "order": "descending" } ] ]
+            var query = new QueryDefinition("SELECT c.id, c.jobId, c.status, c.createdAt FROM c ORDER BY c.createdAt DESC");
+            
+            var queryRequestOptions = new QueryRequestOptions
+            {
+                MaxItemCount = maxItems
+            };
+
+            var iterator = _container.GetItemQueryIterator<JobDocument>(query, requestOptions: queryRequestOptions);
+            var results = new List<JobDocument>();
+
+            // Fetch only the first page to respect maxItems
+            if (iterator.HasMoreResults)
+            {
+                var response = await iterator.ReadNextAsync(cancellationToken);
+                results.AddRange(response);
+                
+                _logger.LogInformation(
+                    "Retrieved {Count} jobs (RU charge: {RequestCharge})",
+                    results.Count,
+                    response.RequestCharge);
+            }
+
+            // Safety check: ensure we don't return more items than requested
+            return results.Take(maxItems).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch all jobs");
+            throw;
+        }
+    }
 }
