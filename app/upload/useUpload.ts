@@ -91,21 +91,29 @@ export function useUpload(): UseUploadResult {
     file: File,
     uploadUrl: string
   ): Promise<void> => {
-    const response = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        "x-ms-blob-type": "BlockBlob",
-        "Content-Type": file.type,
-      },
-      body: file,
-    });
+    try {
+      const response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "x-ms-blob-type": "BlockBlob",
+          "Content-Type": file.type,
+        },
+        body: file,
+      });
 
-    if (!response.ok) {
-      // Check if it's a SAS URL expiration error (403 or specific error codes)
-      if (response.status === 403) {
-        throw new Error("SAS URL has expired. Please retry the upload.");
+      if (!response.ok) {
+        // Check if it's a SAS URL expiration error (403 or specific error codes)
+        if (response.status === 403) {
+          throw new Error("SAS URL has expired. Please retry the upload.");
+        }
+        throw new Error(`Upload failed: ${response.statusText}`);
       }
-      throw new Error(`Upload failed: ${response.statusText}`);
+    } catch (error) {
+      // Check if it's a network error (like ERR_BLOCKED_BY_CLIENT)
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+        throw new Error("Network error during upload. Please check your connection.");
+      }
+      throw error;
     }
   };
 

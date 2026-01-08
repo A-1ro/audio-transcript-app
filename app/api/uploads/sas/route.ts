@@ -119,7 +119,14 @@ export async function POST(request: NextRequest) {
     const uploads: UploadInfo[] = body.files.map((file) => {
       const timestamp = Date.now();
       const randomString = Math.random().toString(36).substring(2, 8);
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      
+      // Sanitize filename while preserving readability
+      // Replace only dangerous characters but keep Unicode characters, spaces (as underscores), etc.
+      // This preserves Japanese characters and other international filenames
+      const sanitizedFileName = file.name
+        .replace(/[<>:"|?*\x00-\x1f]/g, "_") // Replace dangerous characters
+        .replace(/\s+/g, "_"); // Replace whitespace with underscores
+      
       const blobName = `${timestamp}-${randomString}-${sanitizedFileName}`;
 
       const blobClient = containerClient.getBlobClient(blobName);
