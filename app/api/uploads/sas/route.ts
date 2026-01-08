@@ -53,7 +53,7 @@ function validateFileName(fileName: string): { valid: boolean; error?: string } 
 /**
  * Validate Azure Blob Storage container name
  * Container names must be lowercase, 3-63 characters, start with a letter or number,
- * and contain only letters, numbers, and hyphens
+ * and contain only letters, numbers, and hyphens (cannot start or end with hyphens)
  */
 function validateContainerName(containerName: string): { valid: boolean; error?: string } {
   if (!containerName || containerName.trim().length === 0) {
@@ -69,15 +69,10 @@ function validateContainerName(containerName: string): { valid: boolean; error?:
     return { valid: false, error: "Container name must be lowercase" };
   }
 
-  // Must start with letter or number, and contain only letters, numbers, and hyphens
-  const validPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+  // Must start and end with letter or number, and contain only letters, numbers, and hyphens
+  const validPattern = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
   if (!validPattern.test(containerName)) {
-    return { valid: false, error: "Container name must start with a letter or number, and contain only lowercase letters, numbers, and hyphens" };
-  }
-
-  // Cannot contain consecutive hyphens
-  if (containerName.includes("--")) {
-    return { valid: false, error: "Container name cannot contain consecutive hyphens" };
+    return { valid: false, error: "Container name must start and end with a letter or number, and contain only lowercase letters, numbers, and hyphens" };
   }
 
   return { valid: true };
