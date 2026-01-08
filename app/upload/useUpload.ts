@@ -110,16 +110,7 @@ export function useUpload(): UseUploadResult {
       }
     } catch (error) {
       // Check if it's a network error (like ERR_BLOCKED_BY_CLIENT)
-      // This typically occurs in development when using mock URLs
       if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
-        // Check if we're using a mock URL (not a real Azure endpoint)
-        // Note: In production with real Azure Blob Storage, this mock handling won't be triggered
-        if (uploadUrl.includes("mockstorageaccount")) {
-          console.warn("Upload blocked - using mock URL in development mode");
-          // In development with mock URLs, treat this as success
-          return;
-        }
-        // For real URLs, this is a genuine network error
         throw new Error("Network error during upload. Please check your connection.");
       }
       throw error;
