@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -44,6 +45,39 @@ function validateFileName(fileName: string): { valid: boolean; error?: string } 
   const dangerousChars = /[<>:"|?*\x00-\x1f]/;
   if (dangerousChars.test(fileName)) {
     return { valid: false, error: "File name contains invalid characters" };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate Azure Blob Storage container name
+ * Container names must be lowercase, 3-63 characters, start with a letter or number,
+ * and contain only letters, numbers, and hyphens
+ */
+function validateContainerName(containerName: string): { valid: boolean; error?: string } {
+  if (!containerName || containerName.trim().length === 0) {
+    return { valid: false, error: "Container name cannot be empty" };
+  }
+
+  if (containerName.length < 3 || containerName.length > 63) {
+    return { valid: false, error: "Container name must be between 3 and 63 characters" };
+  }
+
+  // Container name must be lowercase
+  if (containerName !== containerName.toLowerCase()) {
+    return { valid: false, error: "Container name must be lowercase" };
+  }
+
+  // Must start with letter or number, and contain only letters, numbers, and hyphens
+  const validPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+  if (!validPattern.test(containerName)) {
+    return { valid: false, error: "Container name must start with a letter or number, and contain only lowercase letters, numbers, and hyphens" };
+  }
+
+  // Cannot contain consecutive hyphens
+  if (containerName.includes("--")) {
+    return { valid: false, error: "Container name cannot contain consecutive hyphens" };
   }
 
   return { valid: true };
@@ -103,7 +137,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate container name against Azure naming rules
+    const containerValidation = validateContainerName(containerName);
+    if (!containerValidation.valid) {
+      console.error("Invalid container name:", containerValidation.error);
+      return NextResponse.json(
+        { error: "Storage configuration error" },
+        { status: 500 }
+      );
+    }
+
     // Create BlobServiceClient with shared key credentials
+    // NOTE: For production environments, consider using Azure Managed Identity
+    // or Azure AD authentication instead of shared keys for enhanced security.
+    // Shared keys provide full access to the storage account and should be
+    // rotated regularly and access should be properly audited.
     const sharedKeyCredential = new StorageSharedKeyCredential(
       accountName,
       accountKey
@@ -115,19 +163,23 @@ export async function POST(request: NextRequest) {
 
     const containerClient = blobServiceClient.getContainerClient(containerName);
 
+    // Ensure the container exists before generating SAS tokens
+    // This prevents upload failures if the container hasn't been created yet
+    await containerClient.createIfNotExists();
+
     // Generate SAS URLs for each file
     const uploads: UploadInfo[] = body.files.map((file) => {
       const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
+      // Use cryptographically secure UUID for uniqueness instead of Math.random()
+      const uniqueId = randomUUID();
       
       // Sanitize filename while preserving readability
-      // Replace only dangerous characters but keep Unicode characters, spaces (as underscores), etc.
-      // This preserves Japanese characters and other international filenames
-      const sanitizedFileName = file.name
-        .replace(/[<>:"|?*\x00-\x1f]/g, "_") // Replace dangerous characters
-        .replace(/\s+/g, "_"); // Replace whitespace with underscores
+      // Dangerous characters are already rejected by validateFileName earlier in the flow.
+      // Here we only normalize whitespace (e.g., spaces) to underscores, preserving Unicode characters
+      // such as Japanese and other international filenames.
+      const sanitizedFileName = file.name.replace(/\s+/g, "_");
       
-      const blobName = `${timestamp}-${randomString}-${sanitizedFileName}`;
+      const blobName = `${timestamp}-${uniqueId}-${sanitizedFileName}`;
 
       const blobClient = containerClient.getBlobClient(blobName);
 
