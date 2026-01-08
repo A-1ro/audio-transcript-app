@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+  BlobSASPermissions,
+  generateBlobSASQueryParameters,
+} from "@azure/storage-blob";
 
 interface FileInfo {
   name: string;
@@ -84,19 +90,56 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // TODO: Replace with actual Azure Blob Storage integration
-    // For now, generate mock URLs for development
+    // Get Azure Storage configuration from environment variables
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || "audio-files";
+
+    if (!accountName || !accountKey) {
+      console.error("Azure Storage credentials not configured");
+      return NextResponse.json(
+        { error: "Storage service not configured" },
+        { status: 500 }
+      );
+    }
+
+    // Create BlobServiceClient with shared key credentials
+    const sharedKeyCredential = new StorageSharedKeyCredential(
+      accountName,
+      accountKey
+    );
+    const blobServiceClient = new BlobServiceClient(
+      `https://${accountName}.blob.core.windows.net`,
+      sharedKeyCredential
+    );
+
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+
+    // Generate SAS URLs for each file
     const uploads: UploadInfo[] = body.files.map((file) => {
       const timestamp = Date.now();
-      const sanitizedFileName = encodeURIComponent(file.name);
-      
-      // Mock SAS URL with expiration time (1 hour from now)
-      const expirationTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-      const mockSasToken = `sv=2023-01-01&se=${expirationTime}&sr=b&sp=cw&sig=mock_signature_${timestamp}`;
-      
-      // Mock Azure Blob Storage URLs
-      const blobUrl = `https://mockstorageaccount.blob.core.windows.net/audio-files/${timestamp}-${sanitizedFileName}`;
-      const uploadUrl = `${blobUrl}?${mockSasToken}`;
+      const randomString = Math.random().toString(36).substring(2, 8);
+      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const blobName = `${timestamp}-${randomString}-${sanitizedFileName}`;
+
+      const blobClient = containerClient.getBlobClient(blobName);
+
+      // Set SAS token expiration to 1 hour from now
+      const expiresOn = new Date(Date.now() + 60 * 60 * 1000);
+
+      // Generate SAS token with write permissions
+      const sasToken = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName,
+          permissions: BlobSASPermissions.parse("cw"), // create and write permissions
+          expiresOn,
+        },
+        sharedKeyCredential
+      ).toString();
+
+      const blobUrl = blobClient.url;
+      const uploadUrl = `${blobUrl}?${sasToken}`;
 
       return {
         fileName: file.name,

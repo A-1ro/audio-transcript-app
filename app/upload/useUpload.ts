@@ -91,38 +91,21 @@ export function useUpload(): UseUploadResult {
     file: File,
     uploadUrl: string
   ): Promise<void> => {
-    try {
-      const response = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "x-ms-blob-type": "BlockBlob",
-          "Content-Type": file.type,
-        },
-        body: file,
-      });
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "x-ms-blob-type": "BlockBlob",
+        "Content-Type": file.type,
+      },
+      body: file,
+    });
 
-      if (!response.ok) {
-        // Check if it's a SAS URL expiration error (403 or specific error codes)
-        if (response.status === 403) {
-          throw new Error("SAS URL has expired. Please retry the upload.");
-        }
-        throw new Error(`Upload failed: ${response.statusText}`);
+    if (!response.ok) {
+      // Check if it's a SAS URL expiration error (403 or specific error codes)
+      if (response.status === 403) {
+        throw new Error("SAS URL has expired. Please retry the upload.");
       }
-    } catch (error) {
-      // Check if it's a network error (like ERR_BLOCKED_BY_CLIENT)
-      // This typically occurs in development when using mock URLs
-      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
-        // Check if we're using a mock URL (not a real Azure endpoint)
-        // Note: In production with real Azure Blob Storage, this mock handling won't be triggered
-        if (uploadUrl.includes("mockstorageaccount")) {
-          console.warn("Upload blocked - using mock URL in development mode");
-          // In development with mock URLs, treat this as success
-          return;
-        }
-        // For real URLs, this is a genuine network error
-        throw new Error("Network error during upload. Please check your connection.");
-      }
-      throw error;
+      throw new Error(`Upload failed: ${response.statusText}`);
     }
   };
 
