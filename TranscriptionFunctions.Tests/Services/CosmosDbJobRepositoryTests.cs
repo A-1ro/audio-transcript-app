@@ -729,4 +729,168 @@ public class CosmosDbJobRepositoryTests
         Assert.NotNull(result);
         Assert.Empty(result);
     }
+
+    [Fact]
+    public async Task CreateJobAsync_WithValidData_CreatesJobSuccessfully()
+    {
+        // Arrange
+        var jobId = "new-job-123";
+        var audioFiles = new[]
+        {
+            new AudioFileInfo
+            {
+                FileId = $"{jobId}-001",
+                BlobUrl = "https://storage.blob.core.windows.net/audio/file1.wav",
+                FileName = "file1.wav"
+            },
+            new AudioFileInfo
+            {
+                FileId = $"{jobId}-002",
+                BlobUrl = "https://storage.blob.core.windows.net/audio/file2.wav",
+                FileName = "file2.wav"
+            }
+        };
+
+        var createdJob = new JobDocument
+        {
+            Id = jobId,
+            JobId = jobId,
+            Status = JobStatus.Pending,
+            AudioFiles = audioFiles,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var mockResponse = new Mock<ItemResponse<JobDocument>>();
+        mockResponse.Setup(r => r.Resource).Returns(createdJob);
+
+        _mockContainer
+            .Setup(c => c.CreateItemAsync(
+                It.Is<JobDocument>(j => 
+                    j.JobId == jobId && 
+                    j.Status == JobStatus.Pending &&
+                    j.AudioFiles == audioFiles),
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResponse.Object);
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act
+        var result = await repository.CreateJobAsync(jobId, audioFiles);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(jobId, result.JobId);
+        Assert.Equal(JobStatus.Pending, result.Status);
+        Assert.Equal(audioFiles, result.AudioFiles);
+        
+        _mockContainer.Verify(
+            c => c.CreateItemAsync(
+                It.IsAny<JobDocument>(),
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null!)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateJobAsync_WithInvalidJobId_ThrowsArgumentException(string? invalidJobId)
+    {
+        // Arrange
+        var audioFiles = new[]
+        {
+            new AudioFileInfo
+            {
+                FileId = "file-001",
+                BlobUrl = "https://storage.blob.core.windows.net/audio/file1.wav",
+                FileName = "file1.wav"
+            }
+        };
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.CreateJobAsync(invalidJobId!, audioFiles));
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_WithNullAudioFiles_ThrowsArgumentException()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.CreateJobAsync(jobId, null!));
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_WithEmptyAudioFiles_ThrowsArgumentException()
+    {
+        // Arrange
+        var jobId = "test-job-123";
+        var audioFiles = Array.Empty<AudioFileInfo>();
+        
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.CreateJobAsync(jobId, audioFiles));
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_WithDuplicateJobId_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var jobId = "duplicate-job-123";
+        var audioFiles = new[]
+        {
+            new AudioFileInfo
+            {
+                FileId = $"{jobId}-001",
+                BlobUrl = "https://storage.blob.core.windows.net/audio/file1.wav",
+                FileName = "file1.wav"
+            }
+        };
+
+        _mockContainer
+            .Setup(c => c.CreateItemAsync(
+                It.IsAny<JobDocument>(),
+                It.IsAny<PartitionKey>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Conflict", System.Net.HttpStatusCode.Conflict, 0, "", 0));
+
+        var repository = new CosmosDbJobRepository(
+            _mockCosmosClient.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.CreateJobAsync(jobId, audioFiles));
+        
+        Assert.Contains(jobId, exception.Message);
+        Assert.Contains("already exists", exception.Message);
+    }
 }
+

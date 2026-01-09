@@ -1,6 +1,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
+using TranscriptionFunctions.Constants;
 
 namespace TranscriptionFunctions;
 
@@ -23,7 +24,7 @@ public class JobQueueTrigger
     /// <param name="client">Durable Task Client</param>
     [Function(nameof(JobQueueTrigger))]
     public async Task RunAsync(
-        [QueueTrigger("transcription-jobs", Connection = "AzureWebJobsStorage")] string queueMessage,
+        [QueueTrigger(QueueNames.TranscriptionJobs, Connection = "AzureWebJobsStorage")] string queueMessage,
         [DurableClient] DurableTaskClient client)
     {
         _logger.LogInformation("Queue trigger received message: {Message}", queueMessage);

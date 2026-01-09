@@ -312,4 +312,68 @@ public class CosmosDbJobRepository : IJobRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// Create a new job
+    /// </summary>
+    /// <param name="jobId">Job ID</param>
+    /// <param name="audioFiles">Audio files associated with the job</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Created job document</returns>
+    public async Task<JobDocument> CreateJobAsync(string jobId, AudioFileInfo[] audioFiles, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        }
+
+        if (audioFiles == null || audioFiles.Length == 0)
+        {
+            throw new ArgumentException("AudioFiles cannot be null or empty", nameof(audioFiles));
+        }
+
+        _logger.LogInformation("Creating new job with JobId: {JobId}", jobId);
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var jobDocument = new JobDocument
+            {
+                Id = jobId,
+                JobId = jobId,
+                Status = JobStatus.Pending,
+                AudioFiles = audioFiles,
+                CreatedAt = now
+            };
+
+            var response = await _container.CreateItemAsync(
+                jobDocument,
+                new PartitionKey(jobId),
+                cancellationToken: cancellationToken);
+
+            _logger.LogInformation(
+                "Job created successfully with JobId: {JobId}, Status: {Status}, AudioFiles: {AudioFileCount}",
+                jobId,
+                JobStatus.Pending,
+                audioFiles.Length);
+
+            return response.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _logger.LogError(
+                ex,
+                "Job with JobId: {JobId} already exists",
+                jobId);
+            throw new InvalidOperationException($"Job with ID {jobId} already exists", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create job with JobId: {JobId}",
+                jobId);
+            throw;
+        }
+    }
 }

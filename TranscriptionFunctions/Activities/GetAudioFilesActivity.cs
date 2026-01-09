@@ -2,6 +2,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
 using Microsoft.Extensions.Logging;
 using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Services;
 
 namespace TranscriptionFunctions.Activities;
 
@@ -10,10 +11,14 @@ namespace TranscriptionFunctions.Activities;
 /// </summary>
 public class GetAudioFilesActivity
 {
+    private readonly IJobRepository _jobRepository;
     private readonly ILogger<GetAudioFilesActivity> _logger;
 
-    public GetAudioFilesActivity(ILogger<GetAudioFilesActivity> logger)
+    public GetAudioFilesActivity(
+        IJobRepository jobRepository,
+        ILogger<GetAudioFilesActivity> logger)
     {
+        _jobRepository = jobRepository;
         _logger = logger;
     }
 
@@ -35,23 +40,22 @@ public class GetAudioFilesActivity
         {
             _logger.LogInformation("Getting audio files for JobId: {JobId}", jobId);
 
-            // TODO: 実際にはCosmosDBやBlobStorageから音声ファイル一覧を取得
-            // 今回はモックデータを返す
-            await Task.Delay(100); // 非同期処理のシミュレーション
-
-            var audioFiles = new List<AudioFileInfo>
+            // Get job document from Cosmos DB
+            var job = await _jobRepository.GetJobAsync(jobId);
+            
+            if (job == null)
             {
-                new AudioFileInfo
-                {
-                    FileId = $"{jobId}-file-001",
-                    BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-001.wav"
-                },
-                new AudioFileInfo
-                {
-                    FileId = $"{jobId}-file-002",
-                    BlobUrl = $"https://storage.blob.core.windows.net/audio/{jobId}/file-002.wav"
-                }
-            };
+                _logger.LogError("Job not found for JobId: {JobId}", jobId);
+                throw new InvalidOperationException($"Job with ID {jobId} not found");
+            }
+
+            if (job.AudioFiles == null || job.AudioFiles.Length == 0)
+            {
+                _logger.LogWarning("No audio files found for JobId: {JobId}", jobId);
+                return new List<AudioFileInfo>();
+            }
+
+            var audioFiles = job.AudioFiles.ToList();
 
             _logger.LogInformation("Found {Count} audio files for JobId: {JobId}", audioFiles.Count, jobId);
 
