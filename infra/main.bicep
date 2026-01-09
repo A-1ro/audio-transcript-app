@@ -9,9 +9,6 @@ param storageAccountName string = 'audiostrage'
 @description('Existing Application Insights name.')
 param appInsightsName string = 'dev-func-transcript-app'
 
-@description('Existing Cosmos DB account name.')
-param cosmosAccountName string = 'dev-cosmosdb-transcription-app'
-
 @description('Existing Speech account name.')
 param speechAccountName string = 'speech-batch-transcript'
 
@@ -25,10 +22,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing 
 
 resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: appInsightsName
-}
-
-resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' existing = {
-  name: cosmosAccountName
 }
 
 resource speechAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
