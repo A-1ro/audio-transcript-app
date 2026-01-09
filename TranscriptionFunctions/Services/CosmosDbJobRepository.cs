@@ -317,13 +317,19 @@ public class CosmosDbJobRepository : IJobRepository
     /// Create a new job
     /// </summary>
     /// <param name="jobId">Job ID</param>
+    /// <param name="audioFiles">Audio files associated with the job</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created job document</returns>
-    public async Task<JobDocument> CreateJobAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<JobDocument> CreateJobAsync(string jobId, AudioFileInfo[] audioFiles, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new ArgumentException("JobId cannot be null or empty", nameof(jobId));
+        }
+
+        if (audioFiles == null || audioFiles.Length == 0)
+        {
+            throw new ArgumentException("AudioFiles cannot be null or empty", nameof(audioFiles));
         }
 
         _logger.LogInformation("Creating new job with JobId: {JobId}", jobId);
@@ -336,6 +342,7 @@ public class CosmosDbJobRepository : IJobRepository
                 Id = jobId,
                 JobId = jobId,
                 Status = JobStatus.Pending,
+                AudioFiles = audioFiles,
                 CreatedAt = now
             };
 
@@ -345,9 +352,10 @@ public class CosmosDbJobRepository : IJobRepository
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "Job created successfully with JobId: {JobId}, Status: {Status}",
+                "Job created successfully with JobId: {JobId}, Status: {Status}, AudioFiles: {AudioFileCount}",
                 jobId,
-                JobStatus.Pending);
+                JobStatus.Pending,
+                audioFiles.Length);
 
             return response.Resource;
         }

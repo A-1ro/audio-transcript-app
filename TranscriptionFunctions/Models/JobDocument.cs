@@ -26,6 +26,12 @@ public class JobDocument
     public required string Status { get; set; }
 
     /// <summary>
+    /// Audio files associated with this job
+    /// </summary>
+    [JsonProperty("audioFiles")]
+    public AudioFileInfo[]? AudioFiles { get; set; }
+
+    /// <summary>
     /// Job Created Timestamp
     /// </summary>
     [JsonProperty("createdAt")]

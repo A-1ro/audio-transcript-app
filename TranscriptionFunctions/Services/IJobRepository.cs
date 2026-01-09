@@ -42,7 +42,8 @@ public interface IJobRepository
     /// Create a new job
     /// </summary>
     /// <param name="jobId">Job ID</param>
+    /// <param name="audioFiles">Audio files associated with the job</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created job document</returns>
-    Task<JobDocument> CreateJobAsync(string jobId, CancellationToken cancellationToken = default);
+    Task<JobDocument> CreateJobAsync(string jobId, AudioFileInfo[] audioFiles, CancellationToken cancellationToken = default);
 }

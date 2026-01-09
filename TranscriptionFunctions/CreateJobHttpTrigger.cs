@@ -118,10 +118,7 @@ public class CreateJobHttpTrigger
             // Generate new Job ID
             var jobId = Guid.NewGuid().ToString();
 
-            // Create job in Cosmos DB
-            var job = await _jobRepository.CreateJobAsync(jobId);
-
-            // Enqueue job to Azure Queue Storage
+            // Check queue configuration before creating the job to avoid orphaned jobs
             var queueConnectionString = _configuration["AzureWebJobsStorage"];
             if (string.IsNullOrWhiteSpace(queueConnectionString))
             {
@@ -136,6 +133,18 @@ public class CreateJobHttpTrigger
                 return errorResponse;
             }
 
+            // Convert request audio files to AudioFileInfo model
+            var audioFileInfos = requestBody.AudioFiles.Select((af, index) => new Models.AudioFileInfo
+            {
+                FileId = $"{jobId}-{index:D3}",
+                BlobUrl = af.BlobUrl,
+                FileName = af.FileName
+            }).ToArray();
+
+            // Create job in Cosmos DB
+            var job = await _jobRepository.CreateJobAsync(jobId, audioFileInfos);
+
+            // Enqueue job to Azure Queue Storage
             try
             {
                 var queueClient = new QueueClient(queueConnectionString, "transcription-jobs");
