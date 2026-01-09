@@ -56,8 +56,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    const body = await request.json();
+    // Parse request body with specific error handling
+    let body;
+    try {
+      body = await request.json();
+    } catch (error) {
+      console.error("Invalid JSON in request body:", error);
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
 
     // Validate request body
     if (!body.audioFiles || !Array.isArray(body.audioFiles)) {

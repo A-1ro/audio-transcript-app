@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
+using TranscriptionFunctions.Constants;
 using TranscriptionFunctions.Services;
 
 namespace TranscriptionFunctions;
@@ -147,7 +148,7 @@ public class CreateJobHttpTrigger
             // Enqueue job to Azure Queue Storage
             try
             {
-                var queueClient = new QueueClient(queueConnectionString, "transcription-jobs");
+                var queueClient = new QueueClient(queueConnectionString, QueueNames.TranscriptionJobs);
                 await queueClient.CreateIfNotExistsAsync();
                 await queueClient.SendMessageAsync(jobId);
 
