@@ -1,42 +1,36 @@
-using Microsoft.Azure.Cosmos;
+using Azure;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Models.TableEntities;
 
 namespace TranscriptionFunctions.Services;
 
 /// <summary>
-/// Cosmos DB implementation of Transcription Repository
+/// Azure Table Storage implementation of Transcription Repository
 /// </summary>
-public class CosmosDbTranscriptionRepository : ITranscriptionRepository
+public class TableStorageTranscriptionRepository : ITranscriptionRepository
 {
-    private readonly Container _container;
-    private readonly ILogger<CosmosDbTranscriptionRepository> _logger;
+    private readonly TableClient _tableClient;
+    private readonly ILogger<TableStorageTranscriptionRepository> _logger;
 
-    public CosmosDbTranscriptionRepository(
-        CosmosClient cosmosClient,
+    public TableStorageTranscriptionRepository(
+        TableServiceClient tableServiceClient,
         IConfiguration configuration,
-        ILogger<CosmosDbTranscriptionRepository> logger)
+        ILogger<TableStorageTranscriptionRepository> _logger)
     {
-        _logger = logger;
+        this._logger = _logger;
 
-        var databaseName = configuration["CosmosDb:DatabaseName"] ?? "TranscriptionDb";
-        var containerName = configuration["CosmosDb:TranscriptionsContainerName"] ?? "Transcriptions";
+        var tableName = configuration["TableStorage:TranscriptionsTableName"] ?? "Transcriptions";
+        _tableClient = tableServiceClient.GetTableClient(tableName);
 
-        _container = cosmosClient.GetContainer(databaseName, containerName);
+        // Ensure table exists (idempotent operation)
+        _tableClient.CreateIfNotExists();
 
         _logger.LogInformation(
-            "CosmosDbTranscriptionRepository initialized with Database: {DatabaseName}, Container: {ContainerName}",
-            databaseName,
-            containerName);
-    }
-
-    /// <summary>
-    /// Create a unique document ID from JobId and FileId
-    /// </summary>
-    private static string CreateDocumentId(string jobId, string fileId)
-    {
-        return $"{jobId}_{fileId}";
+            "TableStorageTranscriptionRepository initialized with Table: {TableName}",
+            tableName);
     }
 
     /// <summary>
@@ -57,13 +51,11 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
             throw new ArgumentException("FileId cannot be null or empty", nameof(fileId));
         }
 
-        var documentId = CreateDocumentId(jobId, fileId);
-
         try
         {
-            var response = await _container.ReadItemAsync<TranscriptionDocument>(
-                documentId,
-                new PartitionKey(jobId),
+            var response = await _tableClient.GetEntityAsync<TranscriptionEntity>(
+                jobId, // PartitionKey
+                fileId, // RowKey
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
@@ -71,9 +63,9 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 jobId,
                 fileId);
 
-            return response.Resource;
+            return response.Value.ToDocument();
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogDebug(
                 "No existing transcription found for JobId: {JobId}, FileId: {FileId}",
@@ -84,7 +76,7 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
     }
 
     /// <summary>
-    /// Save or update transcription result (idempotent using Upsert)
+    /// Save or update transcription result (idempotent using UpsertEntity)
     /// </summary>
     public async Task<TranscriptionDocument> SaveTranscriptionAsync(
         string jobId,
@@ -118,8 +110,6 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 nameof(transcriptText));
         }
 
-        var documentId = CreateDocumentId(jobId, fileId);
-
         // Check if document already exists to preserve CreatedAt timestamp
         // Design tradeoff: This performs an extra read operation before every upsert.
         // For new documents, this results in a NotFound response (extra cost), but it's necessary
@@ -129,13 +119,13 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
         DateTime createdAt;
         try
         {
-            var existingDoc = await _container.ReadItemAsync<TranscriptionDocument>(
-                documentId,
-                new PartitionKey(jobId),
+            var existingEntity = await _tableClient.GetEntityAsync<TranscriptionEntity>(
+                jobId, // PartitionKey
+                fileId, // RowKey
                 cancellationToken: cancellationToken);
             
             // Preserve original CreatedAt for true idempotency
-            createdAt = existingDoc.Resource.CreatedAt;
+            createdAt = existingEntity.Value.CreatedAt;
             
             _logger.LogDebug(
                 "Updating existing transcription for JobId: {JobId}, FileId: {FileId}, preserving CreatedAt: {CreatedAt}",
@@ -143,7 +133,7 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 fileId,
                 createdAt);
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
             // Document doesn't exist, use current time
             createdAt = DateTime.UtcNow;
@@ -156,7 +146,7 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
 
         var document = new TranscriptionDocument
         {
-            Id = documentId,
+            Id = $"{jobId}_{fileId}",
             JobId = jobId,
             FileId = fileId,
             TranscriptText = transcriptText,
@@ -166,6 +156,8 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
             CreatedAt = createdAt
         };
 
+        var entity = TranscriptionEntity.FromDocument(document);
+
         try
         {
             _logger.LogInformation(
@@ -174,18 +166,18 @@ public class CosmosDbTranscriptionRepository : ITranscriptionRepository
                 fileId,
                 status);
 
-            // Upsert operation ensures idempotency - if document exists, it will be updated
-            var response = await _container.UpsertItemAsync(
-                document,
-                new PartitionKey(jobId),
-                cancellationToken: cancellationToken);
+            // UpsertEntity ensures idempotency - if entity exists, it will be updated
+            await _tableClient.UpsertEntityAsync(
+                entity,
+                TableUpdateMode.Replace, // Replace mode for full update
+                cancellationToken);
 
             _logger.LogInformation(
                 "Transcription result saved successfully for JobId: {JobId}, FileId: {FileId}",
                 jobId,
                 fileId);
 
-            return response.Resource;
+            return document;
         }
         catch (Exception ex)
         {
