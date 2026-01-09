@@ -92,7 +92,7 @@ public class JobEntity : ITableEntity
             JobId = JobId,
             Status = Status,
             AudioFiles = !string.IsNullOrEmpty(AudioFilesJson)
-                ? JsonConvert.DeserializeObject<AudioFileInfo[]>(AudioFilesJson)
+                ? JsonConvert.DeserializeObject<AudioFileInfo[]>(AudioFilesJson)!
                 : null,
             CreatedAt = CreatedAt,
             StartedAt = StartedAt,

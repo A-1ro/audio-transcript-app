@@ -228,4 +228,114 @@ public class TableStorageTranscriptionRepositoryTests
                 0.95,
                 TranscriptionStatus.Completed));
     }
+
+    [Fact]
+    public async Task GetTranscriptionAsync_NullJobId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.GetTranscriptionAsync(null!, "file-001"));
+    }
+
+    [Fact]
+    public async Task GetTranscriptionAsync_EmptyJobId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.GetTranscriptionAsync(string.Empty, "file-001"));
+    }
+
+    [Fact]
+    public async Task GetTranscriptionAsync_NullFileId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.GetTranscriptionAsync("job-123", null!));
+    }
+
+    [Fact]
+    public async Task GetTranscriptionAsync_EmptyFileId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.GetTranscriptionAsync("job-123", string.Empty));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_NullJobId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                null!,
+                "file-001",
+                "text",
+                0.95,
+                TranscriptionStatus.Completed));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_EmptyJobId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                string.Empty,
+                "file-001",
+                "text",
+                0.95,
+                TranscriptionStatus.Completed));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_NullFileId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                "job-123",
+                null!,
+                "text",
+                0.95,
+                TranscriptionStatus.Completed));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_EmptyFileId_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                "job-123",
+                string.Empty,
+                "text",
+                0.95,
+                TranscriptionStatus.Completed));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_NullStatus_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                "job-123",
+                "file-001",
+                "text",
+                0.95,
+                null!));
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_EmptyStatus_ThrowsException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _repository.SaveTranscriptionAsync(
+                "job-123",
+                "file-001",
+                "text",
+                0.95,
+                string.Empty));
+    }
 }
