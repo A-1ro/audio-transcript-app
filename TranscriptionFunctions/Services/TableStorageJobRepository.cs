@@ -1,17 +1,19 @@
-using Microsoft.Azure.Cosmos;
+using Azure;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TranscriptionFunctions.Models;
+using TranscriptionFunctions.Models.TableEntities;
 
 namespace TranscriptionFunctions.Services;
 
 /// <summary>
-/// Cosmos DB implementation of Job Repository
+/// Azure Table Storage implementation of Job Repository
 /// </summary>
-public class CosmosDbJobRepository : IJobRepository
+public class TableStorageJobRepository : IJobRepository
 {
-    private readonly Container _container;
-    private readonly ILogger<CosmosDbJobRepository> _logger;
+    private readonly TableClient _tableClient;
+    private readonly ILogger<TableStorageJobRepository> _logger;
     
     // Valid state transitions
     private static readonly Dictionary<string, HashSet<string>> ValidTransitions = new()
@@ -31,22 +33,22 @@ public class CosmosDbJobRepository : IJobRepository
         JobStatus.PartiallyFailed
     };
 
-    public CosmosDbJobRepository(
-        CosmosClient cosmosClient,
+    public TableStorageJobRepository(
+        TableServiceClient tableServiceClient,
         IConfiguration configuration,
-        ILogger<CosmosDbJobRepository> logger)
+        ILogger<TableStorageJobRepository> logger)
     {
         _logger = logger;
         
-        var databaseName = configuration["CosmosDb:DatabaseName"] ?? "TranscriptionDb";
-        var containerName = configuration["CosmosDb:JobsContainerName"] ?? "Jobs";
+        var tableName = configuration["TableStorage:JobsTableName"] ?? "Jobs";
+        _tableClient = tableServiceClient.GetTableClient(tableName);
         
-        _container = cosmosClient.GetContainer(databaseName, containerName);
+        // Ensure table exists (idempotent operation)
+        _tableClient.CreateIfNotExists();
         
         _logger.LogInformation(
-            "CosmosDbJobRepository initialized with Database: {DatabaseName}, Container: {ContainerName}",
-            databaseName,
-            containerName);
+            "TableStorageJobRepository initialized with Table: {TableName}",
+            tableName);
     }
 
     /// <summary>
@@ -58,12 +60,11 @@ public class CosmosDbJobRepository : IJobRepository
     /// <param name="finishedAt">Finished timestamp (optional)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <remarks>
-    /// This method performs a read-modify-write operation which requires two round trips to Cosmos DB.
+    /// This method performs a read-modify-write operation which requires two round trips to Table Storage.
     /// Performance implications:
-    /// - 1 RU for the read operation (point read)
-    /// - Varies for the write operation based on document size (typically 5-15 RUs)
-    /// - Uses optimistic concurrency control with ETags to prevent lost updates
-    /// - In high-throughput scenarios, consider the RU cost and potential retry overhead
+    /// - Read operation (point read by partition key and row key)
+    /// - Write operation with ETag for optimistic concurrency control
+    /// - In high-throughput scenarios, consider the cost and potential retry overhead
     /// </remarks>
     public async Task UpdateJobStatusAsync(
         string jobId,
@@ -89,15 +90,15 @@ public class CosmosDbJobRepository : IJobRepository
 
         try
         {
-            // Read the current job document with ETag for optimistic concurrency
-            var response = await _container.ReadItemAsync<JobDocument>(
-                jobId,
-                new PartitionKey(jobId),
+            // Read the current job entity with ETag for optimistic concurrency
+            var response = await _tableClient.GetEntityAsync<JobEntity>(
+                jobId, // PartitionKey
+                jobId, // RowKey
                 cancellationToken: cancellationToken);
 
-            var job = response.Resource;
-            var currentStatus = job.Status;
-            var etag = response.ETag;
+            var jobEntity = response.Value;
+            var currentStatus = jobEntity.Status;
+            var etag = jobEntity.ETag;
 
             // Validate state transition
             if (!IsValidTransition(currentStatus, status))
@@ -114,60 +115,54 @@ public class CosmosDbJobRepository : IJobRepository
                 jobId);
 
             // Update job fields
-            job.Status = status;
+            jobEntity.Status = status;
 
             // Set startedAt when transitioning to Processing (only if not already set)
-            if (status == JobStatus.Processing && startedAt.HasValue && !job.StartedAt.HasValue)
+            if (status == JobStatus.Processing && startedAt.HasValue && !jobEntity.StartedAt.HasValue)
             {
-                job.StartedAt = startedAt.Value;
+                jobEntity.StartedAt = startedAt.Value;
                 _logger.LogInformation(
                     "Setting StartedAt to {StartedAt} for JobId: {JobId}",
                     startedAt.Value,
                     jobId);
             }
-            else if (status == JobStatus.Processing && job.StartedAt.HasValue)
+            else if (status == JobStatus.Processing && jobEntity.StartedAt.HasValue)
             {
                 _logger.LogInformation(
                     "StartedAt already set to {StartedAt} for JobId: {JobId}, preserving original value",
-                    job.StartedAt.Value,
+                    jobEntity.StartedAt.Value,
                     jobId);
             }
 
             // Set finishedAt when transitioning to final states (only if not already set)
-            if (IsTerminalStatus(status) && finishedAt.HasValue && !job.FinishedAt.HasValue)
+            if (IsTerminalStatus(status) && finishedAt.HasValue && !jobEntity.FinishedAt.HasValue)
             {
-                job.FinishedAt = finishedAt.Value;
+                jobEntity.FinishedAt = finishedAt.Value;
                 _logger.LogInformation(
                     "Setting FinishedAt to {FinishedAt} for JobId: {JobId}",
                     finishedAt.Value,
                     jobId);
             }
-            else if (IsTerminalStatus(status) && job.FinishedAt.HasValue)
+            else if (IsTerminalStatus(status) && jobEntity.FinishedAt.HasValue)
             {
                 _logger.LogInformation(
                     "FinishedAt already set to {FinishedAt} for JobId: {JobId}, preserving original value",
-                    job.FinishedAt.Value,
+                    jobEntity.FinishedAt.Value,
                     jobId);
             }
 
-            // Replace the document in Cosmos DB with optimistic concurrency control using ETag
-            var requestOptions = new ItemRequestOptions
-            {
-                IfMatchEtag = etag
-            };
-
-            await _container.ReplaceItemAsync(
-                job,
-                jobId,
-                new PartitionKey(jobId),
-                requestOptions,
+            // Update the entity in Table Storage with optimistic concurrency control using ETag
+            await _tableClient.UpdateEntityAsync(
+                jobEntity,
+                etag,
+                TableUpdateMode.Replace,
                 cancellationToken);
 
             _logger.LogInformation(
                 "Job status updated successfully for JobId: {JobId}",
                 jobId);
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+        catch (RequestFailedException ex) when (ex.Status == 412) // Precondition Failed
         {
             _logger.LogWarning(
                 ex,
@@ -176,7 +171,7 @@ public class CosmosDbJobRepository : IJobRepository
             throw new InvalidOperationException(
                 $"Job with ID {jobId} was modified by another process. Please retry the operation.", ex);
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogError(
                 ex,
@@ -214,14 +209,14 @@ public class CosmosDbJobRepository : IJobRepository
 
         try
         {
-            var response = await _container.ReadItemAsync<JobDocument>(
-                jobId,
-                new PartitionKey(jobId),
+            var response = await _tableClient.GetEntityAsync<JobEntity>(
+                jobId, // PartitionKey
+                jobId, // RowKey
                 cancellationToken: cancellationToken);
 
-            return response.Resource;
+            return response.Value.ToDocument();
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogWarning(
                 "Job not found for JobId: {JobId}",
@@ -276,35 +271,27 @@ public class CosmosDbJobRepository : IJobRepository
 
         try
         {
-            // Query all documents ordered by createdAt descending
-            // Select only required fields to optimize data transfer and query performance
-            // NOTE: For optimal performance, ensure the Cosmos DB container has a composite (or range) index
-            // that includes /createdAt in descending order, e.g. in the indexing policy:
-            // "compositeIndexes": [ [ { "path": "/createdAt", "order": "descending" } ] ]
-            var query = new QueryDefinition("SELECT c.id, c.jobId, c.status, c.createdAt FROM c ORDER BY c.createdAt DESC");
+            // Query all entities and sort by CreatedAt in memory
+            // Note: Table Storage doesn't support server-side ordering, so we need to fetch and sort
+            var entities = new List<JobEntity>();
             
-            var queryRequestOptions = new QueryRequestOptions
+            await foreach (var entity in _tableClient.QueryAsync<JobEntity>(cancellationToken: cancellationToken))
             {
-                MaxItemCount = maxItems
-            };
-
-            var iterator = _container.GetItemQueryIterator<JobDocument>(query, requestOptions: queryRequestOptions);
-            var results = new List<JobDocument>();
-
-            // Fetch only the first page to respect maxItems
-            if (iterator.HasMoreResults)
-            {
-                var response = await iterator.ReadNextAsync(cancellationToken);
-                results.AddRange(response);
-                
-                _logger.LogInformation(
-                    "Retrieved {Count} jobs (RU charge: {RequestCharge})",
-                    results.Count,
-                    response.RequestCharge);
+                entities.Add(entity);
             }
 
-            // Safety check: ensure we don't return more items than requested
-            return results.Take(maxItems).ToList();
+            // Sort by CreatedAt descending and take maxItems
+            var sortedEntities = entities
+                .OrderByDescending(e => e.CreatedAt)
+                .Take(maxItems);
+
+            var results = sortedEntities.Select(e => e.ToDocument()).ToList();
+            
+            _logger.LogInformation(
+                "Retrieved {Count} jobs",
+                results.Count);
+
+            return results;
         }
         catch (Exception ex)
         {
@@ -346,10 +333,9 @@ public class CosmosDbJobRepository : IJobRepository
                 CreatedAt = now
             };
 
-            var response = await _container.CreateItemAsync(
-                jobDocument,
-                new PartitionKey(jobId),
-                cancellationToken: cancellationToken);
+            var entity = JobEntity.FromDocument(jobDocument);
+
+            await _tableClient.AddEntityAsync(entity, cancellationToken);
 
             _logger.LogInformation(
                 "Job created successfully with JobId: {JobId}, Status: {Status}, AudioFiles: {AudioFileCount}",
@@ -357,9 +343,9 @@ public class CosmosDbJobRepository : IJobRepository
                 JobStatus.Pending,
                 audioFiles.Length);
 
-            return response.Resource;
+            return jobDocument;
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        catch (RequestFailedException ex) when (ex.Status == 409) // Conflict
         {
             _logger.LogError(
                 ex,
