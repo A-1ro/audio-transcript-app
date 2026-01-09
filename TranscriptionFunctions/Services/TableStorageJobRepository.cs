@@ -260,6 +260,16 @@ public class TableStorageJobRepository : IJobRepository
     /// <param name="maxItems">Maximum number of items to return (default: 100)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of job documents</returns>
+    /// <remarks>
+    /// PERFORMANCE WARNING: This method fetches all entities from Table Storage into memory 
+    /// before sorting and limiting results. For large datasets (>1000 jobs), this may cause 
+    /// memory and performance issues. Consider implementing pagination or limiting usage 
+    /// to administrative/monitoring scenarios with reasonable dataset sizes.
+    /// 
+    /// Table Storage limitation: Server-side ordering is not supported, requiring 
+    /// client-side sorting. An alternative would be to use continuation tokens for 
+    /// pagination and sort the limited result set.
+    /// </remarks>
     public async Task<IEnumerable<JobDocument>> GetAllJobsAsync(int maxItems = 100, CancellationToken cancellationToken = default)
     {
         if (maxItems <= 0)
