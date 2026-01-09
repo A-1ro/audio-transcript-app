@@ -37,4 +37,12 @@ public interface IJobRepository
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of job documents</returns>
     Task<IEnumerable<JobDocument>> GetAllJobsAsync(int maxItems = 100, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Create a new job
+    /// </summary>
+    /// <param name="jobId">Job ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Created job document</returns>
+    Task<JobDocument> CreateJobAsync(string jobId, CancellationToken cancellationToken = default);
 }
